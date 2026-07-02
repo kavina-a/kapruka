@@ -30,7 +30,10 @@ from pipecat.services.llm_service import FunctionCallParams
 PushUI = Callable[[dict], Awaitable[None]]
 
 MCP_URL = os.environ.get("KAPRUKA_MCP_URL", "https://mcp.kapruka.com/mcp")
-VOICE_API_BASE = os.environ.get("VOICE_API_BASE", "http://localhost:3000").rstrip("/")
+VOICE_API_BASE = (
+    os.environ.get("VOICE_API_BASE")
+    or os.environ.get("RUKA_API_BASE", "http://localhost:3000")
+).rstrip("/")
 VOICE_API_TOKEN = os.environ.get("VOICE_API_TOKEN")
 
 
