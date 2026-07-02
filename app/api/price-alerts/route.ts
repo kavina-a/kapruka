@@ -1,28 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isDbEnabled } from "@/lib/db";
+import {
+  deletePriceAlert,
+  getAlertsByClient,
+  insertPriceAlert,
+} from "@/lib/db/price-alerts";
 import type { PriceAlert } from "@/lib/commerce/types";
 
-const MONGO_ENABLED = !!process.env.MONGODB_URI;
-const DB_NAME = "chatruka";
-const COLLECTION = "price_alerts";
-
-function getCollection() {
-  return import("@/lib/mongodb").then(async ({ default: clientPromise }) => {
-    const client = await clientPromise;
-    return client.db(DB_NAME).collection<PriceAlert>(COLLECTION);
-  });
-}
+export const runtime = "nodejs";
 
 /** POST /api/price-alerts — create a new price alert. */
 export async function POST(req: NextRequest) {
-  if (!MONGO_ENABLED) {
-    return NextResponse.json({ ok: true, note: "MongoDB not configured; alert not persisted." });
+  if (!isDbEnabled()) {
+    return NextResponse.json({ ok: true, note: "DATABASE_URL not configured; alert not persisted." });
   }
+
   try {
     const body = (await req.json()) as Partial<PriceAlert>;
     const clientId = req.headers.get("x-client-id") ?? body.clientId ?? "anonymous";
     if (!body.productId || !body.productName || body.targetPrice == null) {
       return NextResponse.json({ ok: false, error: "Missing required fields." }, { status: 400 });
     }
+
     const alert: PriceAlert = {
       clientId,
       productId: body.productId,
@@ -33,8 +32,8 @@ export async function POST(req: NextRequest) {
       triggered: false,
       createdAt: new Date().toISOString(),
     };
-    const col = await getCollection();
-    await col.insertOne(alert);
+
+    await insertPriceAlert(alert);
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[price-alerts POST]", err);
@@ -44,19 +43,15 @@ export async function POST(req: NextRequest) {
 
 /** GET /api/price-alerts?clientId=… — list this device's alerts. */
 export async function GET(req: NextRequest) {
-  if (!MONGO_ENABLED) return NextResponse.json({ ok: true, alerts: [] });
+  if (!isDbEnabled()) return NextResponse.json({ ok: true, alerts: [] });
+
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (!clientId) {
     return NextResponse.json({ ok: false, error: "clientId required." }, { status: 400 });
   }
+
   try {
-    const col = await getCollection();
-    const alerts = await col
-      .find({ clientId })
-      .sort({ createdAt: -1 })
-      .limit(20)
-      .project<PriceAlert>({ _id: 0 })
-      .toArray();
+    const alerts = await getAlertsByClient(clientId);
     return NextResponse.json({ ok: true, alerts });
   } catch (err) {
     console.error("[price-alerts GET]", err);
@@ -66,15 +61,16 @@ export async function GET(req: NextRequest) {
 
 /** DELETE /api/price-alerts?clientId=…&productId=… — remove an alert. */
 export async function DELETE(req: NextRequest) {
-  if (!MONGO_ENABLED) return NextResponse.json({ ok: true });
+  if (!isDbEnabled()) return NextResponse.json({ ok: true });
+
   const clientId = req.nextUrl.searchParams.get("clientId");
   const productId = req.nextUrl.searchParams.get("productId");
   if (!clientId || !productId) {
     return NextResponse.json({ ok: false, error: "clientId and productId required." }, { status: 400 });
   }
+
   try {
-    const col = await getCollection();
-    await col.deleteOne({ clientId, productId });
+    await deletePriceAlert(clientId, productId);
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[price-alerts DELETE]", err);

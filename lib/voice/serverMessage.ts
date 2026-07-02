@@ -14,7 +14,7 @@ export function parseVoiceServerMessage(raw: unknown): VoiceServerMessage | null
         : null;
 
   if (!inner || typeof inner.type !== "string") return null;
-  return inner as VoiceServerMessage;
+  return inner as unknown as VoiceServerMessage;
 }
 
 /** Fill defaults for products pushed from the Python voice server. */

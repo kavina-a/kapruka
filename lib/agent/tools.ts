@@ -429,33 +429,6 @@ export const rukaTools = {
     },
   }),
 
-  setPriceAlert: tool({
-    description:
-      "When the buyer asks to be notified when a product's price drops below a target, call this to save a price alert. The UI will check daily and surface the alert when the price is hit.",
-    inputSchema: z.object({
-      productId: z.string().describe("The Kapruka product id."),
-      productName: z.string().describe("The product name for display."),
-      currentPrice: z.number().describe("The product's current price in LKR."),
-      targetPrice: z
-        .number()
-        .describe("The price threshold in LKR — notify when price drops at or below this."),
-    }),
-    execute: async ({ productId, productName, currentPrice, targetPrice }) => {
-      try {
-        const res = await fetch(`${APP_URL}/api/price-alerts`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ productId, productName, currentPrice, targetPrice }),
-        });
-        const data = (await res.json()) as { ok?: boolean; error?: string };
-        if (!data.ok) return { ok: false as const, error: data.error ?? "Failed to set alert." };
-        return { ok: true as const, productName, targetPrice };
-      } catch (err) {
-        return errorPayload(err);
-      }
-    },
-  }),
-
   searchYouTubeVideos: tool({
     description:
       "Search YouTube for relevant videos and show them inline in the chat. Only call this when the buyer seems genuinely uncertain about how a product looks or feels in real life, or when they want creative/DIY inspiration (e.g. handmade gift ideas, flower arrangement styles, unboxing a specific product type). Do NOT call for straightforward gift searches where the buyer is already confident. Good triggers: 'I'm not sure what it looks like', 'do you have something handmade?', 'what do these flower arrangements actually look like?', 'I want to make something myself', buyer hesitating after seeing product cards. Bad triggers: buyer browsing normally, any routine gift discovery.",
@@ -515,6 +488,44 @@ export const rukaTools = {
   }),
 };
 
+function makeSetPriceAlertTool(clientId?: string) {
+  return tool({
+    description:
+      "When the buyer asks to be notified when a product's price drops below a target, call this to save a price alert. The UI will check daily and surface the alert when the price is hit.",
+    inputSchema: z.object({
+      productId: z.string().describe("The Kapruka product id."),
+      productName: z.string().describe("The product name for display."),
+      currentPrice: z.number().describe("The product's current price in LKR."),
+      targetPrice: z
+        .number()
+        .describe("The price threshold in LKR — notify when price drops at or below this."),
+    }),
+    execute: async ({ productId, productName, currentPrice, targetPrice }) => {
+      try {
+        const res = await fetch(`${APP_URL}/api/price-alerts`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...(clientId ? { "x-client-id": clientId } : {}),
+          },
+          body: JSON.stringify({
+            productId,
+            productName,
+            currentPrice,
+            targetPrice,
+            clientId,
+          }),
+        });
+        const data = (await res.json()) as { ok?: boolean; error?: string };
+        if (!data.ok) return { ok: false as const, error: data.error ?? "Failed to set alert." };
+        return { ok: true as const, productName, targetPrice };
+      } catch (err) {
+        return errorPayload(err);
+      }
+    },
+  });
+}
+
 export function createRukaTools(
   commerceContext?: CommerceContext | null,
   mode: AgentMode = "CHAT",
@@ -533,6 +544,7 @@ export function createRukaTools(
     ...chatTools,
     addToCart: makeAddToCartTool(commerceContext?.shownProducts),
     removeFromCart: makeRemoveFromCartTool(cartItems),
+    setPriceAlert: makeSetPriceAlertTool(commerceContext?.clientId),
   };
 }
 

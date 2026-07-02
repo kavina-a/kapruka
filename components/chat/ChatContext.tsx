@@ -14,10 +14,18 @@ import {
 import { useCommerce } from "@/lib/commerce/store";
 import type { CommerceContext, LocationType, Product } from "@/lib/commerce/types";
 import {
+  clearChatSession,
+  clearStoredSessionId,
   consumePaymentReturn,
   loadChatSession,
   saveChatSession,
+  setStoredSessionId,
 } from "@/lib/chat/session-persist";
+import {
+  ensureServerSession,
+  loadServerSession,
+  scheduleSessionSync,
+} from "@/lib/chat/session-sync";
 
 type ChatHelpers = ReturnType<typeof useChat>;
 
@@ -45,6 +53,7 @@ interface SearchOutput {
 
 export function ChatProvider({ children }: { children: ReactNode }) {
   const userProfile = useCommerce((s) => s.userProfile);
+  const clientId = useCommerce((s) => s.clientId);
   const cart = useCommerce((s) => s.cart);
   const cartSubtotal = useCommerce((s) => s.cartSubtotal);
   const delivery = useCommerce((s) => s.delivery);
@@ -74,8 +83,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       chatCheckoutStep,
       recipientDislikes,
       shownProducts: activeSet?.products?.map((p) => ({ id: p.id, name: p.name })),
+      clientId,
     }),
-    [cart, cartSubtotal, delivery, sender, giftMessage, giftMessageSource, chatCheckoutStep, recipientDislikes, activeSet],
+    [cart, cartSubtotal, delivery, sender, giftMessage, giftMessageSource, chatCheckoutStep, recipientDislikes, activeSet, clientId],
   );
 
   const commerceContextRef = useRef(commerceContext);
@@ -120,41 +130,60 @@ export function ChatProvider({ children }: { children: ReactNode }) {
    */
   const processedToolCallsRef = useRef(new Set<string>());
 
-  // Restore chat after returning from Kapruka payment.
+  // Restore chat: sessionStorage first (payment return), then Neon (new tab / reload).
   useEffect(() => {
     if (restoredRef.current) return;
     restoredRef.current = true;
-    const paymentRef = consumePaymentReturn();
-    const snapshot = loadChatSession();
-    if (snapshot?.messages?.length) {
-      // Pre-mark all cart tool call IDs from restored messages as already-processed.
-      // The Zustand cart is persisted separately in localStorage and is already correct —
-      // replaying these tool calls would double (or 99×) the quantities.
-      for (const msg of snapshot.messages) {
-        if (msg.role !== "assistant") continue;
-        const parts = (msg as { parts?: Array<Record<string, unknown>> }).parts ?? [];
-        for (const part of parts) {
-          if (
-            (part.type === "tool-addToCart" || part.type === "tool-removeFromCart") &&
-            part.state === "output-available" &&
-            typeof part.toolCallId === "string"
-          ) {
-            processedToolCallsRef.current.add(part.toolCallId);
+
+    void (async () => {
+      const paymentRef = consumePaymentReturn();
+      const local = loadChatSession();
+
+      let messages = local?.messages;
+      if (!messages?.length) {
+        await ensureServerSession(clientId);
+        const remote = await loadServerSession(clientId);
+        if (remote?.messages?.length) messages = remote.messages;
+      } else {
+        await ensureServerSession(clientId);
+      }
+
+      if (messages?.length) {
+        for (const msg of messages) {
+          if (msg.role !== "assistant") continue;
+          const parts = (msg as { parts?: Array<Record<string, unknown>> }).parts ?? [];
+          for (const part of parts) {
+            if (
+              (part.type === "tool-addToCart" || part.type === "tool-removeFromCart") &&
+              part.state === "output-available" &&
+              typeof part.toolCallId === "string"
+            ) {
+              processedToolCallsRef.current.add(part.toolCallId);
+            }
           }
         }
+        chat.setMessages(messages);
       }
-      chat.setMessages(snapshot.messages);
-    }
-    if (paymentRef) {
-      // Brief delay so messages mount before the assistant-style follow-up could be added by UI.
-      sessionStorage.setItem("chatruka-payment-welcome", paymentRef);
-    }
-  }, [chat]);
 
-  // Persist conversation while shopping (survives payment redirect / tab navigation).
+      if (paymentRef) {
+        sessionStorage.setItem("chatruka-payment-welcome", paymentRef);
+      }
+    })();
+  }, [chat, clientId]);
+
+  // Persist locally (fast) + sync to Neon (durable).
   useEffect(() => {
-    if (chat.messages.length) saveChatSession(chat.messages);
-  }, [chat.messages]);
+    if (!chat.messages.length) return;
+    saveChatSession(chat.messages);
+    scheduleSessionSync({
+      clientId,
+      messages: chat.messages,
+      buyerName: userProfile.name,
+      buyerCity: userProfile.city ?? delivery.city,
+      recipientName: delivery.recipientName,
+      recipientCity: delivery.city,
+    });
+  }, [chat.messages, clientId, userProfile.name, userProfile.city, delivery.recipientName, delivery.city]);
 
   // Mirror tool outputs into shared client state.
   useEffect(() => {
@@ -308,6 +337,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         chat.setMessages([]);
         lastSyncedRef.current = null;
         processedToolCallsRef.current.clear();
+        clearChatSession();
+        clearStoredSessionId();
+        void ensureServerSession(clientId).then((id) => {
+          setStoredSessionId(id);
+        });
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

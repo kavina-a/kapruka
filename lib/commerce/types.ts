@@ -164,9 +164,11 @@ export interface CommerceContext {
   recipientDislikes?: Record<string, string[]>;
   /** Products currently on screen from the latest search — use these ids for addToCart. */
   shownProducts?: Array<{ id: string; name: string }>;
+  /** Anonymous device id — ties orders, alerts, and sessions together. */
+  clientId?: string;
 }
 
-/** A lightweight order record persisted to MongoDB after each confirmed order. */
+/** A lightweight order record persisted to Neon after each confirmed order. */
 export interface OrderRecord {
   clientId: string;
   recipient: string;
