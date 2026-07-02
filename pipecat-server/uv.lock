@@ -523,7 +523,7 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.9.0" },
     { name = "loguru", specifier = ">=0.7.0" },
     { name = "mcp", specifier = ">=1.0.0" },
-    { name = "pipecat-ai", extras = ["google", "webrtc", "runner", "openai", "cartesia", "deepgram"], specifier = ">=1.4.0" },
+    { name = "pipecat-ai", extras = ["google", "webrtc", "runner", "openai", "cartesia", "deepgram", "elevenlabs"], specifier = ">=1.4.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
 ]
 

@@ -8,7 +8,7 @@ Supports two modes (set via PIPECAT_PIPELINE_MODE):
 Traditional provider choices (all via .env):
   STT_PROVIDER : openai (Whisper) | deepgram
   LLM_PROVIDER : openai (GPT-4o)  | google (Gemini text)
-  TTS_PROVIDER : cartesia          | openai
+  TTS_PROVIDER : elevenlabs       | cartesia | openai
 """
 
 from __future__ import annotations
@@ -157,6 +157,21 @@ class PipelineService:
 
     def _build_tts(self):
         s = self._settings
+        if s.tts_provider == TTSProvider.ELEVENLABS:
+            if not s.elevenlabs_api_key:
+                raise RuntimeError("ELEVENLABS_API_KEY is required when TTS_PROVIDER=elevenlabs.")
+            from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
+            logger.info(
+                f"TTS | elevenlabs model={s.elevenlabs_model} voice={s.elevenlabs_voice_id} language=en"
+            )
+            return ElevenLabsTTSService(
+                api_key=s.elevenlabs_api_key,
+                settings=ElevenLabsTTSService.Settings(
+                    voice=s.elevenlabs_voice_id,
+                    model=s.elevenlabs_model,
+                    language="en",
+                ),
+            )
         if s.tts_provider == TTSProvider.CARTESIA:
             if not s.cartesia_api_key:
                 raise RuntimeError("CARTESIA_API_KEY is required when TTS_PROVIDER=cartesia.")
@@ -226,6 +241,7 @@ class PipelineService:
         conversation_id = f"ruka-{uuid.uuid4().hex[:12]}"
         logger.info(
             f"Starting session {conversation_id} | mode={self._settings.pipeline_mode.value}"
+            f" profile={self._settings.voice_profile.value}"
         )
 
         self._ruka = KaprukaMCPTools()

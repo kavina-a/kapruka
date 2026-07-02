@@ -7,10 +7,10 @@ Two pipeline modes, each with swappable providers:
         • Optional pin: GEMINI_LANGUAGE=si-LK | ta-IN | en-US
 
     TRADITIONAL — STT → LLM → TTS
-        • Best for English with Cartesia (high-quality, low-latency TTS)
+        • English: ElevenLabs TTS (VOICE_PROFILE=english) or Cartesia / OpenAI
         • STT: openai (Whisper) | deepgram
         • LLM: openai (GPT-4o) | google (Gemini)
-        • TTS: cartesia | openai
+        • TTS: elevenlabs | cartesia | openai
 
 Quick recipes (copy to .env and fill in API keys):
 
@@ -20,13 +20,13 @@ Quick recipes (copy to .env and fill in API keys):
     GEMINI_MODEL=gemini-2.0-flash-live-001
     # GEMINI_LANGUAGE unset → auto language detection
 
-    # Traditional — English with Cartesia TTS
+    # Traditional — English with ElevenLabs TTS
     PIPECAT_PIPELINE_MODE=traditional
+    VOICE_PROFILE=english
     OPENAI_API_KEY=...
-    CARTESIA_API_KEY=...
-    STT_PROVIDER=openai
-    TTS_PROVIDER=cartesia
-    CARTESIA_VOICE_ID=694f9389-aac1-45b6-b726-9d9369183238
+    ELEVENLABS_API_KEY=...
+    ELEVENLABS_VOICE_ID=...
+    TTS_PROVIDER=elevenlabs
 """
 
 from __future__ import annotations
@@ -49,6 +49,11 @@ class PipelineMode(str, Enum):
     TRADITIONAL = "traditional"  # STT + LLM + TTS
 
 
+class VoiceProfile(str, Enum):
+    MULTILINGUAL = "multilingual"  # Gemini Live — English, Sinhala, Tamil, Tanglish
+    ENGLISH      = "english"       # Traditional pipeline + ElevenLabs TTS
+
+
 class STTProvider(str, Enum):
     OPENAI   = "openai"    # OpenAI Whisper — great for English
     DEEPGRAM = "deepgram"  # Deepgram nova-2 — very low latency
@@ -60,8 +65,9 @@ class LLMProvider(str, Enum):
 
 
 class TTSProvider(str, Enum):
-    CARTESIA = "cartesia"  # Best quality + lowest latency for English
-    OPENAI   = "openai"    # OpenAI TTS (alloy, nova, etc.)
+    ELEVENLABS = "elevenlabs"  # ElevenLabs — best for English voice character
+    CARTESIA   = "cartesia"    # Cartesia sonic — low latency English
+    OPENAI     = "openai"      # OpenAI TTS (alloy, nova, etc.)
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +78,7 @@ class TTSProvider(str, Enum):
 class Settings:
     # ── Common ──────────────────────────────────────────────────────────────
     pipeline_mode: PipelineMode
+    voice_profile:   VoiceProfile
     greet_first:   bool
     host:          str
     port:          int
@@ -100,6 +107,9 @@ class Settings:
     cartesia_model:       str       # sonic-2 | sonic-3
     cartesia_voice_id:    str       # Cartesia voice UUID
     openai_tts_voice:     str       # alloy | nova | echo | fable | onyx | shimmer
+    elevenlabs_api_key:   str | None
+    elevenlabs_voice_id:  str
+    elevenlabs_model:     str       # eleven_turbo_v2_5 | eleven_flash_v2_5
 
 
 # ---------------------------------------------------------------------------
@@ -116,9 +126,32 @@ def _enum(cls, raw: str | None, default):
 
 
 def load_settings() -> Settings:
+    voice_profile = _enum(
+        VoiceProfile,
+        os.getenv("VOICE_PROFILE"),
+        VoiceProfile.MULTILINGUAL,
+    )
+    pipeline_mode = _enum(
+        PipelineMode,
+        os.getenv("PIPECAT_PIPELINE_MODE"),
+        PipelineMode.REALTIME,
+    )
+    tts_provider = _enum(
+        TTSProvider,
+        os.getenv("TTS_PROVIDER"),
+        TTSProvider.ELEVENLABS if voice_profile == VoiceProfile.ENGLISH else TTSProvider.CARTESIA,
+    )
+
+    # English profile uses traditional STT → LLM → ElevenLabs TTS (not Gemini Live audio).
+    if voice_profile == VoiceProfile.ENGLISH:
+        pipeline_mode = PipelineMode.TRADITIONAL
+        if not os.getenv("TTS_PROVIDER"):
+            tts_provider = TTSProvider.ELEVENLABS
+
     return Settings(
         # Common
-        pipeline_mode = _enum(PipelineMode, os.getenv("PIPECAT_PIPELINE_MODE"), PipelineMode.REALTIME),
+        pipeline_mode = pipeline_mode,
+        voice_profile = voice_profile,
         greet_first   = os.getenv("GREET_FIRST", "true").lower() in ("1", "true", "yes"),
         host          = os.getenv("PIPECAT_HOST", "0.0.0.0"),
         port          = int(os.getenv("PIPECAT_PORT", "7860")),
@@ -142,11 +175,14 @@ def load_settings() -> Settings:
         llm_model      = os.getenv("LLM_MODEL", os.getenv("OPENAI_MODEL", "gpt-4o-mini")),
 
         # Traditional — TTS
-        tts_provider      = _enum(TTSProvider, os.getenv("TTS_PROVIDER"), TTSProvider.CARTESIA),
+        tts_provider      = tts_provider,
         cartesia_api_key  = os.getenv("CARTESIA_API_KEY") or None,
         cartesia_model    = os.getenv("CARTESIA_MODEL", "sonic-2"),
         cartesia_voice_id = os.getenv("CARTESIA_VOICE_ID", "694f9389-aac1-45b6-b726-9d9369183238"),
         openai_tts_voice  = os.getenv("OPENAI_TTS_VOICE", "nova"),
+        elevenlabs_api_key  = os.getenv("ELEVENLABS_API_KEY") or None,
+        elevenlabs_voice_id = os.getenv("ELEVENLABS_VOICE_ID", "kdmDKE6EkgrWrrykO9Qt"),
+        elevenlabs_model    = os.getenv("ELEVENLABS_MODEL", "eleven_turbo_v2_5"),
     )
 
 

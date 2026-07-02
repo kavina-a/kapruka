@@ -7,8 +7,9 @@
 #   runner   — PipelineWorker / WorkerRunner
 #   openai   — OpenAI Whisper STT + GPT-4o LLM + TTS
 #   cartesia — Cartesia TTS (sonic-2/sonic-3, ultra-low latency)
+#   elevenlabs — ElevenLabs TTS (English voice agent)
 #   deepgram — Deepgram nova-2 STT (optional, very low latency)
-pipecat-ai[google,webrtc,runner,openai,cartesia,deepgram]>=1.4.0
+pipecat-ai[google,webrtc,runner,openai,cartesia,deepgram,elevenlabs]>=1.4.0
 aiohttp>=3.9.0
 python-dotenv>=1.0.0
 loguru>=0.7.0

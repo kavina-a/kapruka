@@ -68,6 +68,7 @@ In the app, click **Call Ruka**. Default offer URL:
 |------|-----|--------|
 | **realtime** (default) | `realtime` | Multilingual voice — Gemini Live (English, Sinhala, Tamil, Tanglish) |
 | **traditional** | `traditional` | English — pick your own STT / LLM / TTS providers |
+| **english** profile | `VOICE_PROFILE=english` | English-only — auto-switches to traditional + ElevenLabs TTS |
 
 ### Realtime — Gemini Live (multilingual)
 
@@ -82,7 +83,25 @@ GEMINI_VOICE=Aoede                        # Aoede | Charon | Fenrir | Kore | Puc
 
 Text chat Tamil uses **VALSEA** in the Next.js app (`VALSEA_API_KEY` in `.env.local`). Voice does not use VALSEA — Gemini Live handles all languages.
 
-### Traditional — STT + LLM + TTS (English / Cartesia)
+### English — ElevenLabs TTS
+
+ElevenLabs only works in the **traditional** pipeline (STT → LLM → TTS), not Gemini Live.
+Set `VOICE_PROFILE=english` to auto-configure this:
+
+```env
+VOICE_PROFILE=english
+PIPECAT_PIPELINE_MODE=traditional
+OPENAI_API_KEY=...         # Whisper STT + GPT-4o LLM
+ELEVENLABS_API_KEY=...
+ELEVENLABS_VOICE_ID=kdmDKE6EkgrWrrykO9Qt
+TTS_PROVIDER=elevenlabs
+ELEVENLABS_MODEL=eleven_turbo_v2_5
+```
+
+For Sinhala/Tamil/Tanglish, switch back to `VOICE_PROFILE=multilingual` and
+`PIPECAT_PIPELINE_MODE=realtime`.
+
+### Traditional — STT + LLM + TTS (Cartesia / OpenAI)
 
 Each component is independently swappable:
 
@@ -90,7 +109,7 @@ Each component is independently swappable:
 |-------|----------------|---------|
 | **STT** | `STT_PROVIDER` | `openai` (Whisper) · `deepgram` (nova-2) |
 | **LLM** | `LLM_PROVIDER` | `openai` (GPT-4o) |
-| **TTS** | `TTS_PROVIDER` | `cartesia` (sonic-2/3) · `openai` |
+| **TTS** | `TTS_PROVIDER` | `elevenlabs` · `cartesia` (sonic-2/3) · `openai` |
 
 ```env
 PIPECAT_PIPELINE_MODE=traditional
