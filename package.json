@@ -1,0 +1,47 @@
+{
+  "name": "kapruka",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "pipecat:sync": "cd pipecat-server && uv sync",
+    "pipecat:dev": "cd pipecat-server && uv run bot.py",
+    "eval:chat": "tsx eval/run.ts",
+    "eval:chat:verbose": "tsx eval/run.ts --verbose"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^3.0.71",
+    "@ai-sdk/react": "^3.0.208",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@neondatabase/serverless": "^1.1.0",
+    "@pipecat-ai/client-js": "^1.11.0",
+    "@pipecat-ai/client-react": "^1.6.0",
+    "@pipecat-ai/small-webrtc-transport": "^1.10.4",
+    "ai": "^6.0.206",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.20.0",
+    "mongodb": "^7.3.0",
+    "motion": "^12.40.0",
+    "next": "16.2.9",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "tailwind-merge": "^3.6.0",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "dotenv": "^17.4.2",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.9",
+    "tailwindcss": "^4",
+    "tsx": "^4.22.4",
+    "typescript": "^5"
+  }
+}

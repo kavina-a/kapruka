@@ -1,0 +1,182 @@
+@import "tailwindcss";
+
+/*
+  ChatRuka — Purple Concierge
+  Kapruka's instantly recognizable purple identity, but restrained — Claude's
+  whitespace philosophy applied. Not a crowded store; a personal shopper.
+  Soft Lavender Mist canvas, Midnight Ink text, Kapruka Purple as the brand
+  anchor, Kapruka Yellow as the AI's smile / personality accent.
+*/
+
+@theme {
+  /* Canvas + surfaces — soft lavender, airy */
+  --color-canvas: #f7f5fc;     /* Soft Lavender Mist — main background */
+  --color-canvas-2: #ffffff;   /* Pure White — conversation surfaces */
+  --color-canvas-3: #ede9f6;   /* Deeper lavender — hover / sunken */
+  --color-surface: #ffffff;    /* product card face */
+  --color-surface-2: #f7f5fc;
+  --color-line: #d4cde8;       /* Dusty Lavender hairline */
+  --color-line-strong: #b8aecf;
+
+  /* Text — midnight ink, purple-leaning */
+  --color-ink: #1e1b2e;        /* primary ink */
+  --color-ink-muted: #5a5370;  /* secondary */
+  --color-ink-faint: #9b91b8;  /* meta / captions */
+  --color-ink-dark: #1e1b2e;   /* ink on light fills */
+
+  /* Brand: Kapruka Purple */
+  --color-brand-50:  #f2eef9;
+  --color-brand-100: #e2d9f4;
+  --color-brand-300: #8a72bc;
+  --color-brand-400: #6b44a3;
+  --color-brand-500: #5c3792;
+  --color-brand-600: #4c2d7a;
+  --color-brand-700: #41236d;  /* exact Kapruka Purple */
+  --color-brand-900: #2a1752;
+
+  /* Gift highlight: Kapruka Yellow — the smile */
+  --color-gold-200: #5a4000;   /* deep — text on gold fills */
+  --color-gold-300: #b08800;   /* readable gold — prices on white */
+  --color-gold-400: #ffd200;   /* Kapruka Yellow — typing dots, rings */
+  --color-gold-500: #f5c800;   /* CTA button fill */
+  --color-gold-600: #d4a800;   /* pressed state */
+
+  /* Functional (errors only — not a brand accent) */
+  --color-rose-300: #a23a2e;
+  --color-rose-400: #c24a38;
+  --color-rose-500: #b23a2e;
+  --color-rose-600: #8e2e22;
+
+  /* Status */
+  --color-success: #4c2d7a;
+  --color-warn:    #f5c800;
+  --color-danger:  #b23a2e;
+
+  --font-sans:    var(--font-ibm-plex), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-sinhala: var(--font-noto-sinhala), var(--font-ibm-plex), sans-serif;
+  --font-tamil: var(--font-noto-tamil), var(--font-ibm-plex), sans-serif;
+
+  --radius-xl2: 1.25rem;
+  --radius-xl3: 1.75rem;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Ambient backdrop — soft lavender vignette, purple-forward */
+.app-backdrop {
+  background:
+    radial-gradient(1200px 820px at 50% -22%, #ede9f8, transparent 70%),
+    radial-gradient(900px 600px at 100% 100%, #e6e0f5, transparent 60%),
+    var(--color-canvas);
+}
+
+.glass {
+  background: var(--color-canvas-2);
+  border: 1px solid var(--color-line);
+}
+
+.hairline {
+  border: 1px solid var(--color-line);
+}
+
+.font-sinhala {
+  font-family: var(--font-sinhala);
+}
+
+.font-tamil {
+  font-family: var(--font-tamil);
+}
+
+/* Custom scrollbars */
+.scroll-soft {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+.scroll-soft::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-soft::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 999px;
+}
+.scroll-soft::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Typing dots */
+@keyframes chatruka-blink {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+.typing-dot {
+  animation: chatruka-blink 1.2s infinite both;
+}
+
+/* Shimmer for image loading */
+@keyframes chatruka-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--color-canvas-3) 30%,
+    color-mix(in oklab, var(--color-canvas-3) 70%, #ffffff) 50%,
+    var(--color-canvas-3) 70%
+  );
+  background-size: 200% 100%;
+  animation: chatruka-shimmer 1.5s infinite linear;
+}
+
+/* Yellow smile pulse — used on RukaAvatar when AI is thinking */
+@keyframes smile-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 210, 0, 0.55); }
+  50%       { box-shadow: 0 0 0 5px rgba(255, 210, 0, 0); }
+}
+.avatar-thinking {
+  animation: smile-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes chatruka-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.float-slow {
+  animation: chatruka-float 6s ease-in-out infinite;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+/* iOS safe areas — notches, home indicator */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}

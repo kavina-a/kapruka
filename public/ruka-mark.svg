@@ -1,0 +1,25 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="canopy" cx="50%" cy="42%" r="60%">
+      <stop offset="0%" stop-color="#efd183" />
+      <stop offset="55%" stop-color="#d99f2b" />
+      <stop offset="100%" stop-color="#1f8a4f" />
+    </radialGradient>
+    <linearGradient id="trunk" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#b87e1c" />
+      <stop offset="100%" stop-color="#176b3e" />
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="64" fill="#0c1712" />
+  <circle cx="64" cy="54" r="34" fill="url(#canopy)" opacity="0.95" />
+  <circle cx="64" cy="54" r="34" fill="none" stroke="#f6e4b3" stroke-opacity="0.35" stroke-width="1.5" />
+  <path d="M64 50 L64 96" stroke="url(#trunk)" stroke-width="7" stroke-linecap="round" />
+  <path d="M64 70 C56 64 50 62 44 60" stroke="url(#trunk)" stroke-width="4.5" stroke-linecap="round" fill="none" />
+  <path d="M64 66 C72 60 78 58 85 57" stroke="url(#trunk)" stroke-width="4.5" stroke-linecap="round" fill="none" />
+  <!-- gifts / wishes as little dots on the canopy -->
+  <circle cx="52" cy="46" r="3.2" fill="#fbf7ef" />
+  <circle cx="74" cy="42" r="2.6" fill="#fbf7ef" opacity="0.9" />
+  <circle cx="66" cy="58" r="2.2" fill="#fbf7ef" opacity="0.8" />
+  <circle cx="80" cy="56" r="2" fill="#db4f4f" />
+  <circle cx="48" cy="60" r="2" fill="#db4f4f" />
+</svg>

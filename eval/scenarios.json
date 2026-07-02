@@ -1,0 +1,412 @@
+{
+  "_readme": "Each scenario is a self-contained test. 'turns' is the multi-turn conversation. 'expect' defines what the grader checks in the final agent reply. Chain scenarios share a 'session_id' and are run in order — the full history is passed to each turn.",
+  "scenarios": [
+
+    {
+      "id": "S1_vague_intent",
+      "name": "Vague intent — open browse",
+      "category": "discovery",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "I want to get something nice for my mum's birthday next week" }
+      ],
+      "expect": {
+        "must_contain_any": ["budget", "interest", "like", "occasion", "tell me", "what does", "who is"],
+        "must_not_contain": ["Here are some options", "Based on your search", "I found these products"],
+        "tool_called": "searchGifts",
+        "notes": "Agent should ask at most ONE clarifying question OR search a sensible default. Must not dump a raw product list. Must not ask multiple questions."
+      }
+    },
+
+    {
+      "id": "S2_specific_product",
+      "name": "Specific product search — Toblerone",
+      "category": "discovery",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "Do you have Toblerone?" }
+      ],
+      "expect": {
+        "must_contain_any": ["Rs", "LKR", "add", "cart", "basket"],
+        "must_not_contain": ["yes we have it", "I cannot", "sorry"],
+        "tool_called": "searchGifts",
+        "notes": "Agent must search and surface product with price. Must not just say yes/no."
+      }
+    },
+
+    {
+      "id": "S3_filter_search",
+      "name": "Filtered browse — cakes under 3000 same-day Colombo 3",
+      "category": "discovery",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "Show me cakes under 3000 rupees that can be delivered today in Colombo 3" }
+      ],
+      "expect": {
+        "must_contain_any": ["today", "same-day", "same day", "delivery", "Rs", "LKR"],
+        "must_not_contain": ["I cannot filter", "sorry", "please visit"],
+        "tool_called": "searchGifts",
+        "tool_params_contain": { "occasionId": "cakes", "maxPrice": 3000 },
+        "notes": "Must use occasionId: cakes with budget filter. Must check delivery availability."
+      }
+    },
+
+    {
+      "id": "S4_delegate_mode",
+      "name": "Delegate mode — girlfriend, too busy",
+      "category": "delegate",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "girlfriend, too busy, just come up with something" }
+      ],
+      "expect": {
+        "must_not_contain": ["What vibe", "Any specific", "occasion or vibe", "flowers or jewelry", "Let me know what you think"],
+        "tool_called": "searchGifts",
+        "tool_params_contain": { "occasionId": "romance" },
+        "notes": "ZERO questions before searchGifts. Must search romance immediately. Forbidden phrases must not appear."
+      }
+    },
+
+    {
+      "id": "S5_relationship_repair",
+      "name": "Relationship repair — she's mad at me",
+      "category": "emotional",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "she's mad at me, I messed up" }
+      ],
+      "expect": {
+        "must_contain_any": ["rough", "okay", "got you", "soft", "let's", "flowers", "chocolates"],
+        "must_not_contain": ["Let's aim for something heartfelt", "How about", "Let me know what you think", "jewelry"],
+        "tool_called": "searchGifts",
+        "notes": "Must open with friend empathy (not consultant-speak), then immediately search romance/flowers. No jewelry upsell."
+      }
+    },
+
+    {
+      "id": "S6_diaspora_gift",
+      "name": "Diaspora flow — London sender, Kandy recipient",
+      "category": "diaspora",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "I'm in London. I want to send flowers to my sister in Kandy for her anniversary tomorrow." }
+      ],
+      "expect": {
+        "must_contain_any": ["Kandy", "address", "message card", "message", "Rs", "LKR", "tomorrow", "delivery"],
+        "must_not_contain": ["I cannot deliver", "outside Sri Lanka"],
+        "tool_called_any": ["findDeliveryCities", "checkDelivery", "searchGifts"],
+        "notes": "Must check Kandy is serviceable. Must ask for address and message card. Should mention LKR pricing."
+      }
+    },
+
+    {
+      "id": "S7_emotional_diaspora",
+      "name": "Emotional diaspora — haven't been home in 3 years",
+      "category": "emotional",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "It's my parents' 40th anniversary and I haven't been home in 3 years. I want to do something really special." }
+      ],
+      "expect": {
+        "must_contain_any": ["special", "40", "anniversary", "message", "card", "personal"],
+        "must_not_contain": ["Here are some options", "Based on your search"],
+        "tone_signals": ["warm", "emotional acknowledgement before product push"],
+        "notes": "CRITICAL TEST. Agent must acknowledge the emotional moment before pushing products. Must not immediately dump a product list. Should suggest a premium combo with personal card."
+      }
+    },
+
+    {
+      "id": "S8_urgency_today",
+      "name": "Urgent same-day — wife birthday today",
+      "category": "urgency",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "Oh no I completely forgot my wife's birthday is TODAY. I'm in Colombo. What can I deliver to her office in Colombo 7 right now?" }
+      ],
+      "expect": {
+        "must_contain_any": ["same-day", "same day", "today", "Colombo 7", "2pm", "cutoff", "delivery"],
+        "must_not_contain": ["I cannot guarantee", "please check the website"],
+        "tool_called_any": ["checkDelivery", "findDeliveryCities"],
+        "notes": "Urgency must be acknowledged. Must check same-day eligibility for Colombo 7. Must surface time cutoff if relevant."
+      }
+    },
+
+    {
+      "id": "S9_chain_add_to_cart",
+      "name": "Add to cart — explicit confirmation",
+      "category": "cart",
+      "session_id": "chain_cart_01",
+      "turns": [
+        { "role": "user", "content": "need tulips for my girlfriend asap" },
+        { "role": "assistant", "content": "[PLACEHOLDER — previous agent turn]" },
+        { "role": "user", "content": "lets add the one with pink roses" }
+      ],
+      "expect": {
+        "tool_called": "addToCart",
+        "must_contain_any": ["basket", "cart", "done", "added"],
+        "must_not_contain": ["Shall we proceed to checkout", "proceed to checkout"],
+        "must_contain_cross_sell": true,
+        "cross_sell_signals": ["chocolates", "card", "message", "note", "something else", "pair", "alongside"],
+        "notes": "CRITICAL. Must call addToCart. Must NOT say 'Shall we proceed to checkout?' Must offer cross-sell (chocolates or card) before checkout prompt."
+      }
+    },
+
+    {
+      "id": "S10_no_premature_add",
+      "name": "No premature cart add — preference expressed, not confirmed",
+      "category": "cart_discipline",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "she loves KitKat chocolates" }
+      ],
+      "expect": {
+        "tool_not_called": "addToCart",
+        "tool_called": "searchGifts",
+        "must_not_contain": ["added to cart", "in your basket"],
+        "notes": "CRITICAL. 'She loves X' is NOT add-to-cart permission. Must search, not add."
+      }
+    },
+
+    {
+      "id": "S11_context_chain",
+      "name": "Context retention across 5 turns",
+      "category": "memory",
+      "session_id": "chain_context_01",
+      "turns": [
+        { "role": "user", "content": "I live in Nugegoda." },
+        { "role": "assistant", "content": "[PLACEHOLDER]" },
+        { "role": "user", "content": "My name is Roshan." },
+        { "role": "assistant", "content": "[PLACEHOLDER]" },
+        { "role": "user", "content": "I want to buy a birthday cake." },
+        { "role": "assistant", "content": "[PLACEHOLDER]" },
+        { "role": "user", "content": "For my daughter. She likes strawberry." },
+        { "role": "assistant", "content": "[PLACEHOLDER]" },
+        { "role": "user", "content": "What do you recommend?" }
+      ],
+      "expect": {
+        "must_contain_any": ["Nugegoda", "strawberry", "daughter", "birthday"],
+        "must_not_contain": ["where are you located", "what occasion", "who is this for", "any flavour preference"],
+        "notes": "CRITICAL MEMORY TEST. Final response must use ALL context — Nugegoda, Roshan, daughter, strawberry — without re-asking anything."
+      }
+    },
+
+    {
+      "id": "S12_mode_switch_chat_to_track",
+      "name": "Mode switch — shopping to order tracking",
+      "category": "mode_switch",
+      "session_id": "chain_mode_01",
+      "turns": [
+        { "role": "user", "content": "Find me some nice chocolates." },
+        { "role": "assistant", "content": "[PLACEHOLDER]" },
+        { "role": "user", "content": "Wait, I have a complaint about a previous order first. Order KP-2024-88712 arrived damaged." }
+      ],
+      "expect": {
+        "must_contain_any": ["[MODE: TRACK]", "MODE: TRACK", "order", "KP-2024-88712", "sorry", "understand", "frustrating"],
+        "must_not_contain": ["Here are some chocolates", "back to chocolates"],
+        "tool_called": "trackOrder",
+        "notes": "Must switch to TRACK mode. Must acknowledge complaint with empathy FIRST. Must call trackOrder."
+      }
+    },
+
+    {
+      "id": "S13_mode_switch_back",
+      "name": "Mode switch — back to chat after tracking",
+      "category": "mode_switch",
+      "session_id": "chain_mode_01",
+      "turns": [
+        { "role": "user", "content": "Find me some nice chocolates." },
+        { "role": "assistant", "content": "[PLACEHOLDER]" },
+        { "role": "user", "content": "Wait, I have a complaint about a previous order first. Order KP-2024-88712." },
+        { "role": "assistant", "content": "[MODE: TRACK] Let me pull that up right away. [trackOrder called]" },
+        { "role": "user", "content": "OK sorted. Back to the chocolates." }
+      ],
+      "expect": {
+        "must_contain_any": ["[MODE: CHAT]", "MODE: CHAT"],
+        "must_contain_bridge": true,
+        "bridge_signals": ["order", "resolved", "sorted", "handled", "found", "checked"],
+        "must_not_contain": ["What were you looking for", "How can I help"],
+        "notes": "Must switch back to CHAT. Must include a one-sentence bridge summarising the order outcome. Must NOT ask what they wanted — agent remembers chocolates."
+      }
+    },
+
+    {
+      "id": "S14_code_switch_sinhala",
+      "name": "Sinhala-English code switching",
+      "category": "language",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "Api kawda, I want to send a gift to my amme in Galle. She likes flowers meka wage." }
+      ],
+      "expect": {
+        "must_contain_any": ["Galle", "flowers", "address", "amme", "mum", "mother"],
+        "must_not_contain": ["I only support English", "please write in English", "I don't understand"],
+        "tool_called_any": ["findDeliveryCities", "searchGifts"],
+        "notes": "Must understand Sinhala-English naturally. Must not refuse or ask them to switch language. Must respond helpfully."
+      }
+    },
+
+    {
+      "id": "S15_out_of_stock",
+      "name": "Out of stock — honest redirect",
+      "category": "edge_case",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "I want the Black Forest cake for tomorrow delivery in Jaffna." }
+      ],
+      "expect": {
+        "must_contain_any": ["alternative", "similar", "instead", "available", "another", "Jaffna"],
+        "must_not_contain": ["sorry we don't have", "I cannot help", "please visit the website"],
+        "notes": "If unavailable — must offer alternatives honestly. Must check delivery to Jaffna."
+      }
+    },
+
+    {
+      "id": "S16_budget_constraint",
+      "name": "Tight budget — 1500 rupees",
+      "category": "budget",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "I only have 1500 rupees. What's the best gift I can give?" }
+      ],
+      "expect": {
+        "must_contain_any": ["1500", "Rs 1", "LKR 1", "chocolates", "chocolate", "card", "cart", "basket", "bouquet", "budget"],
+        "must_not_contain": ["Rs 6", "Rs 5", "Rs 7", "Rs 8", "Rs 9"],
+        "tool_called_any": ["searchGifts", "optimizeBudget"],
+        "tool_params_contain": { "maxPrice": 1500 },
+        "notes": "Must work within the stated budget. Must not suggest things over budget. Must call optimizeBudget or searchGifts with maxPrice 1500."
+      }
+    },
+
+    {
+      "id": "S17_competitor_mention",
+      "name": "Competitor mention — price match",
+      "category": "trust",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "Daraz has this cheaper. Can you match the price?" }
+      ],
+      "expect": {
+        "must_contain_any": ["Kapruka", "reliable", "same-day", "delivery", "trusted", "value", "budget", "price range", "match"],
+        "must_not_contain": ["Daraz is", "competitor", "they are wrong"],
+        "notes": "Must not badmouth Daraz. Must not make promises about price matching it cannot fulfil. Must highlight Kapruka's genuine value proposition."
+      }
+    },
+
+    {
+      "id": "S18_angry_customer",
+      "name": "Angry customer — third late order",
+      "category": "complaint",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "This is the THIRD time my order has been late. I'm done with Kapruka. Give me a refund NOW." }
+      ],
+      "expect": {
+        "must_contain_any": ["sorry", "apologise", "understand", "frustrating", "order number", "support", "kapruka.com/contactUs"],
+        "must_not_contain": ["our policy states", "per our terms", "I cannot process refunds without", "please calm"],
+        "notes": "CRITICAL. Must de-escalate FIRST. Must not defend Kapruka or lecture policy. Must acknowledge 'third time' specifically. Must route to support."
+      }
+    },
+
+    {
+      "id": "S19_out_of_scope",
+      "name": "Out of scope — flight booking",
+      "category": "edge_case",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "Can you book me a flight to Kandy?" }
+      ],
+      "expect": {
+        "must_contain_any": ["gift", "send", "Kandy", "deliver", "flowers", "can help with"],
+        "must_not_contain": ["I cannot do anything", "goodbye", "I only handle gifts"],
+        "notes": "Must politely decline flights. Must immediately bridge to what Kapruka CAN do for Kandy. Must not just say no."
+      }
+    },
+
+    {
+      "id": "S20_checkout_flow",
+      "name": "Full checkout — add, address, confirm",
+      "category": "checkout",
+      "session_id": "chain_checkout_01",
+      "turns": [
+        { "role": "user", "content": "Add 2 boxes of Milk Tray chocolates and a bunch of red roses to my cart" },
+        { "role": "assistant", "content": "[PLACEHOLDER]" },
+        { "role": "user", "content": "Deliver to 45/2 Flower Road, Colombo 7. Leave it with the security guard." },
+        { "role": "assistant", "content": "[PLACEHOLDER]" },
+        { "role": "user", "content": "Yes, confirm the order." }
+      ],
+      "expect": {
+        "must_contain_any": ["Flower Road", "Colombo 7", "security guard", "chocolates", "roses", "confirm", "review", "screen", "looks right", "looks good", "change"],
+        "must_not_contain": ["what is your address", "where should we deliver"],
+        "tool_called": "showCheckoutForm",
+        "notes": "Must carry address AND the security guard note forward. Must not re-ask for address. Must show checkout form."
+      }
+    },
+
+    {
+      "id": "S21_mid_checkout_change",
+      "name": "Mid-checkout swap — roses to mixed bouquet",
+      "category": "checkout",
+      "session_id": "chain_checkout_02",
+      "turns": [
+        { "role": "user", "content": "Add the pink roses to my cart" },
+        { "role": "assistant", "content": "[PLACEHOLDER — cart now has pink roses]" },
+        { "role": "user", "content": "Actually can I swap the roses for a mixed bouquet instead?" }
+      ],
+      "expect": {
+        "tool_called": "searchGifts",
+        "must_contain_any": ["mixed", "bouquet", "swap", "replace", "instead", "removed"],
+        "must_not_contain": ["start again", "new order", "let me restart", "add a new item"],
+        "notes": "Must swap without restarting checkout. Must not lose the rest of the cart context."
+      }
+    },
+
+    {
+      "id": "S22_gift_message_offer",
+      "name": "Card message offer — near checkout, romantic context",
+      "category": "cross_sell",
+      "session_id": "chain_cart_02",
+      "turns": [
+        { "role": "user", "content": "I want to send flowers to my girlfriend for Valentine's." },
+        { "role": "assistant", "content": "[PLACEHOLDER — showed flowers]" },
+        { "role": "user", "content": "Add the pink roses." }
+      ],
+      "expect": {
+        "tool_called": "addToCart",
+        "must_contain_any": ["card", "message", "write", "chocolates", "alongside", "pair"],
+        "must_not_contain": ["Shall we proceed to checkout"],
+        "notes": "After cart add in romantic context, agent must offer card message OR chocolates. The checkout prompt alone is a FAIL."
+      }
+    },
+
+    {
+      "id": "S23_no_fabrication",
+      "name": "No fabrication — agent must not invent stock or prices",
+      "category": "hallucination",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "Is there a Lindt Excellence 90% dark chocolate available? How much is it?" }
+      ],
+      "expect": {
+        "must_not_contain": ["Rs 1,200", "Rs 850", "in stock", "yes we have that"],
+        "tool_called": "searchGifts",
+        "notes": "Agent must NOT invent a price or stock status. Must call searchGifts and report what the tool returns. If not found, must say so honestly."
+      }
+    },
+
+    {
+      "id": "S24_sympathy_no_upsell",
+      "name": "Sympathy flow — no upsell",
+      "category": "emotional",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "I need to send something to my aunt. Her husband just passed away." }
+      ],
+      "expect": {
+        "must_contain_any": ["sorry", "condolences", "sympathy", "flowers", "roses", "bouquet", "hamper"],
+        "must_not_contain": ["milk chocolates", "chocolates", "upgrade", "premium", "also add", "pair with", "alongside"],
+        "notes": "CRITICAL. No cross-sell, no upsell in sympathy flow. Empathy first. No toxic positivity."
+      }
+    }
+
+  ]
+}
