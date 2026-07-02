@@ -1,6 +1,6 @@
 import type { ValseaEnrichment } from "@/lib/valsea/types";
 
-/** Inject VALSEA intelligence into the system prompt for Tamil turns. */
+/** Inject VALSEA intelligence into the chat system prompt for Tamil turns. */
 export function buildValseaContextBlock(enrichment: ValseaEnrichment): string {
   const lines = [
     "# VALSEA speech intelligence (Tamil / SEA input)",

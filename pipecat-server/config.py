@@ -3,8 +3,8 @@
 Two pipeline modes, each with swappable providers:
 
     REALTIME (default) — Gemini Live speech-to-speech
-        • Best for Sinhala, multilingual, multimodal voice
-        • Set GEMINI_LANGUAGE=si-LK for Sinhala
+        • Multilingual: English, Sinhala, Tamil, Tanglish (leave GEMINI_LANGUAGE unset)
+        • Optional pin: GEMINI_LANGUAGE=si-LK | ta-IN | en-US
 
     TRADITIONAL — STT → LLM → TTS
         • Best for English with Cartesia (high-quality, low-latency TTS)
@@ -14,11 +14,11 @@ Two pipeline modes, each with swappable providers:
 
 Quick recipes (copy to .env and fill in API keys):
 
-    # Realtime Gemini — Sinhala / multilingual
+    # Realtime Gemini — multilingual voice (recommended)
     PIPECAT_PIPELINE_MODE=realtime
     GOOGLE_API_KEY=...
     GEMINI_MODEL=gemini-2.0-flash-live-001
-    GEMINI_LANGUAGE=si-LK
+    # GEMINI_LANGUAGE unset → auto language detection
 
     # Traditional — English with Cartesia TTS
     PIPECAT_PIPELINE_MODE=traditional
@@ -52,7 +52,6 @@ class PipelineMode(str, Enum):
 class STTProvider(str, Enum):
     OPENAI   = "openai"    # OpenAI Whisper — great for English
     DEEPGRAM = "deepgram"  # Deepgram nova-2 — very low latency
-    VALSEA   = "valsea"    # VALSEA — Tamil, Sinhala, Singlish, SEA accents
 
 
 class LLMProvider(str, Enum):
@@ -63,7 +62,6 @@ class LLMProvider(str, Enum):
 class TTSProvider(str, Enum):
     CARTESIA = "cartesia"  # Best quality + lowest latency for English
     OPENAI   = "openai"    # OpenAI TTS (alloy, nova, etc.)
-    VALSEA   = "valsea"    # VALSEA TTS — Tamil and Indian languages
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +82,7 @@ class Settings:
     google_api_key:  str
     gemini_model:    str           # e.g. gemini-2.0-flash-live-001
     gemini_voice:    str           # e.g. Aoede, Charon, Fenrir, Kore, Puck
-    gemini_language: str | None    # e.g. si-LK, en-US — None = auto-detect
+    gemini_language: str | None    # unset = multilingual auto-detect; or si-LK, ta-IN, en-US
 
     # ── Traditional: STT ────────────────────────────────────────────────────
     stt_provider:    STTProvider
@@ -102,11 +100,6 @@ class Settings:
     cartesia_model:       str       # sonic-2 | sonic-3
     cartesia_voice_id:    str       # Cartesia voice UUID
     openai_tts_voice:     str       # alloy | nova | echo | fable | onyx | shimmer
-
-    # ── VALSEA (Tamil / SEA speech) ─────────────────────────────────────────
-    valsea_api_key:  str | None
-    valsea_language: str           # tamil | sinhala | singlish | english
-    valsea_voice:    str           # valsea-neutral | valsea-male | valsea-female
 
 
 # ---------------------------------------------------------------------------
@@ -154,11 +147,6 @@ def load_settings() -> Settings:
         cartesia_model    = os.getenv("CARTESIA_MODEL", "sonic-2"),
         cartesia_voice_id = os.getenv("CARTESIA_VOICE_ID", "694f9389-aac1-45b6-b726-9d9369183238"),
         openai_tts_voice  = os.getenv("OPENAI_TTS_VOICE", "nova"),
-
-        # VALSEA
-        valsea_api_key  = os.getenv("VALSEA_API_KEY") or None,
-        valsea_language = os.getenv("VALSEA_LANGUAGE", "tamil"),
-        valsea_voice    = os.getenv("VALSEA_VOICE", "valsea-female"),
     )
 
 

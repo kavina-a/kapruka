@@ -66,18 +66,21 @@ In the app, click **Call Ruka**. Default offer URL:
 
 | Mode | Set `PIPECAT_PIPELINE_MODE=` | Best for |
 |------|-----|--------|
-| **realtime** (default) | `realtime` | Sinhala, multilingual, multimodal — Gemini Live native audio |
+| **realtime** (default) | `realtime` | Multilingual voice — Gemini Live (English, Sinhala, Tamil, Tanglish) |
 | **traditional** | `traditional` | English — pick your own STT / LLM / TTS providers |
 
-### Realtime — Gemini Live
+### Realtime — Gemini Live (multilingual)
 
 ```env
 PIPECAT_PIPELINE_MODE=realtime
 GOOGLE_API_KEY=...
 GEMINI_MODEL=gemini-2.0-flash-live-001   # default
 GEMINI_VOICE=Aoede                        # Aoede | Charon | Fenrir | Kore | Puck
-GEMINI_LANGUAGE=si-LK                     # Sinhala; omit for auto-detect
+# GEMINI_LANGUAGE unset — auto-detect English / Sinhala / Tamil / Tanglish
+# Optional pin: GEMINI_LANGUAGE=si-LK | ta-IN | en-US
 ```
+
+Text chat Tamil uses **VALSEA** in the Next.js app (`VALSEA_API_KEY` in `.env.local`). Voice does not use VALSEA — Gemini Live handles all languages.
 
 ### Traditional — STT + LLM + TTS (English / Cartesia)
 

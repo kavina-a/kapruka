@@ -2,7 +2,7 @@
 
 Supports two modes (set via PIPECAT_PIPELINE_MODE):
 
-  realtime    — Gemini Live speech-to-speech (Sinhala / multilingual / multimodal)
+  realtime    — Gemini Live speech-to-speech (English / Sinhala / Tamil / Tanglish)
   traditional — STT → LLM → TTS with swappable providers per component
 
 Traditional provider choices (all via .env):
@@ -50,9 +50,10 @@ class PipelineService:
             system_instruction=build_system_instruction(),
             voice=s.gemini_voice,
             temperature=0.7,
+            model=s.gemini_model,
         )
-        # gemini_model always has a value (default set in config.py)
-        kwargs["model"] = s.gemini_model
+        # Only pin when GEMINI_LANGUAGE is set. Unset = Gemini multilingual auto-detect
+        # (English, Sinhala, Tamil, Tanglish) — do not default to si-LK or en-US here.
         if s.gemini_language:
             kwargs["language"] = s.gemini_language
         return GeminiLiveLLMService.Settings(**kwargs)
@@ -68,7 +69,11 @@ class PipelineService:
 
         logger.info(
             f"Realtime pipeline | model={s.gemini_model} voice={s.gemini_voice}"
-            + (f" language={s.gemini_language}" if s.gemini_language else " language=auto")
+            + (
+                f" language={s.gemini_language}"
+                if s.gemini_language
+                else " language=multilingual (auto)"
+            )
         )
 
         llm = GeminiLiveLLMService(
@@ -98,12 +103,6 @@ class PipelineService:
 
     def _build_stt(self):
         s = self._settings
-        if s.stt_provider == STTProvider.VALSEA:
-            if not s.valsea_api_key:
-                raise RuntimeError("VALSEA_API_KEY is required when STT_PROVIDER=valsea.")
-            from services.valsea import ValseaSTTService
-            logger.info(f"STT | valsea language={s.valsea_language}")
-            return ValseaSTTService(api_key=s.valsea_api_key, language=s.valsea_language)
         if s.stt_provider == STTProvider.DEEPGRAM:
             if not s.deepgram_api_key:
                 raise RuntimeError("DEEPGRAM_API_KEY is required when STT_PROVIDER=deepgram.")
@@ -158,16 +157,6 @@ class PipelineService:
 
     def _build_tts(self):
         s = self._settings
-        if s.tts_provider == TTSProvider.VALSEA:
-            if not s.valsea_api_key:
-                raise RuntimeError("VALSEA_API_KEY is required when TTS_PROVIDER=valsea.")
-            from services.valsea import ValseaTTSService
-            logger.info(f"TTS | valsea language={s.valsea_language} voice={s.valsea_voice}")
-            return ValseaTTSService(
-                api_key=s.valsea_api_key,
-                language=s.valsea_language,
-                voice=s.valsea_voice,
-            )
         if s.tts_provider == TTSProvider.CARTESIA:
             if not s.cartesia_api_key:
                 raise RuntimeError("CARTESIA_API_KEY is required when TTS_PROVIDER=cartesia.")
