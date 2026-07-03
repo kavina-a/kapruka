@@ -12,6 +12,7 @@ import { OCCASIONS } from "@/lib/catalog/occasions";
 import { useCommerce } from "@/lib/commerce/store";
 import type { VoiceEntry } from "@/lib/commerce/store";
 import { buildThread } from "@/lib/chat/buildThread";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { ProductCarousel } from "@/components/products/ProductCarousel";
 
@@ -88,13 +89,14 @@ function VoiceMessage({ entry }: { entry: VoiceEntry }) {
 function Greeting({ sendText }: { sendText: (t: string) => void }) {
   const openVoice = useCommerce((s) => s.openVoice);
   const name = useCommerce((s) => s.userProfile.name);
+  const { t } = useT();
   const quickOccasions = OCCASIONS.filter((o) => QUICK_IDS.includes(o.id));
 
   const greet = timeGreeting();
   const headline = name ? `${greet}, ${name}` : greet;
-  const subtext = name
-    ? `Who are we gifting today? Tell me the occasion and I'll find something that actually lands.`
-    : `Tell me who it's for and the occasion — I'll find something that lands, then take you to checkout anywhere in Sri Lanka.`;
+  // const subtext = name
+  //   ? `Who are we gifting today? Tell me the occasion and I'll find something that actually lands.`
+  //   : `Tell me who it's for and the occasion — I'll find something that lands, then take you to checkout anywhere in Sri Lanka.`;
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 pb-4 sm:px-5">
@@ -122,47 +124,27 @@ function Greeting({ sendText }: { sendText: (t: string) => void }) {
         >
           {headline}
         </motion.h1>
-        <motion.p
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.1 }}
-          className="mt-2 text-center text-sm text-ink-muted"
-        >
-          {subtext}
-        </motion.p>
-
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5, delay: 0.14 }}
-          className="mt-5 flex flex-wrap justify-center gap-2"
-        >
-          {quickOccasions.map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              onClick={() => sendText(`Show me ${o.label.toLowerCase()} gift ideas`)}
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-line bg-canvas-2 px-3.5 py-2 text-sm text-ink-muted transition hover:border-gold-400 hover:text-ink"
-            >
-              <span>{o.emoji}</span>
-              {o.label}
-            </button>
-          ))}
-        </motion.div>
 
         <div className="mt-6" data-drop-zone="composer">
           <Composer autoFocus />
+          <motion.p
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.14, ease: [0.22, 1, 0.36, 1] }}
+            className="mt-3 text-center text-sm italic tracking-wide text-ink-muted/80"
+          >
+            {t("composerTagline")}
+          </motion.p>
         </div>
 
         <div className="mt-3 flex justify-center">
-          <button
+          {/* <button
             onClick={openVoice}
             className="inline-flex min-h-11 items-center gap-2 rounded-full border border-brand-300/40 bg-brand-100/60 px-4 py-2.5 text-sm font-medium text-brand-600 transition hover:bg-brand-100"
           >
             <BrandMascot variant="call" size={28} />
             <span className="sm:hidden">Call ChatRuka</span>
-            <span className="hidden sm:inline">Or call ChatRuka — English, Sinhala, Tamil, or mixed</span>
-          </button>
+          </button> */}
         </div>
       </div>
     </div>

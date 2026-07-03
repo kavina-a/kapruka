@@ -18,7 +18,11 @@ export function saveChatSession(messages: UIMessage[], orderRef?: string): void 
       savedAt: new Date().toISOString(),
       orderRef,
     };
-    sessionStorage.setItem(CHAT_KEY, JSON.stringify(snapshot));
+    const json = JSON.stringify(snapshot);
+    // localStorage persists across browser restarts (AI memory between visits).
+    // sessionStorage keeps the same fast in-tab copy.
+    localStorage.setItem(CHAT_KEY, json);
+    sessionStorage.setItem(CHAT_KEY, json);
   } catch {
     // Quota or private mode — best effort.
   }
@@ -27,7 +31,9 @@ export function saveChatSession(messages: UIMessage[], orderRef?: string): void 
 export function loadChatSession(): ChatSessionSnapshot | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = sessionStorage.getItem(CHAT_KEY);
+    // sessionStorage is faster (same tab/refresh); fall back to localStorage
+    // which persists after the browser is closed.
+    const raw = sessionStorage.getItem(CHAT_KEY) ?? localStorage.getItem(CHAT_KEY);
     if (!raw) return null;
     return JSON.parse(raw) as ChatSessionSnapshot;
   } catch {
@@ -38,6 +44,7 @@ export function loadChatSession(): ChatSessionSnapshot | null {
 export function clearChatSession(): void {
   if (typeof window === "undefined") return;
   sessionStorage.removeItem(CHAT_KEY);
+  localStorage.removeItem(CHAT_KEY);
 }
 
 export function getStoredSessionId(): string | null {

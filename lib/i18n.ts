@@ -27,6 +27,11 @@ export const STRINGS = {
     si: "ඔබ කාටද තෑගි දෙන්නේ කියන්න…",
     ta: "யாருக்குப் பரிசு வேண்டும் என்று சொல்லுங்கள்…",
   },
+  composerTagline: {
+    en: "Forget the website. Just talk.",
+    si: "වෙබ් අඩවිය අමතක කරන්න. කතා කරන්න.",
+    ta: "வலைத்தளத்தை மறந்துவிடுங்கள். பேசுங்கள்.",
+  },
   expand: { en: "Expand menu", si: "මෙනුව විහිදන්න", ta: "மெனுவை விரிக்கவும்" },
   collapse: { en: "Collapse menu", si: "මෙනුව හකුළන්න", ta: "மெனுவை சுருக்கவும்" },
 } satisfies Record<string, Entry>;

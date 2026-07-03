@@ -94,9 +94,7 @@ export function Header() {
           className="h-9 w-auto object-contain"
           draggable={false}
         />
-        <div className="hidden text-[11px] text-brand-300 sm:block lg:max-w-[200px] lg:truncate">
-          Kapruka gift concierge
-        </div>
+     
       </div>
 
       <div className="flex items-center gap-1.5 sm:gap-2">

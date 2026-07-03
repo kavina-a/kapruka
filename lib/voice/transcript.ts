@@ -10,36 +10,37 @@ export function partToText(text: unknown): string {
   return "";
 }
 
-/** Combine streaming parts into one display string for a single turn. */
-function messageToText(parts: ConversationMessage["parts"]): string {
-  const chunks = parts.map((p) => partToText(p.text).trim()).filter(Boolean);
-  if (!chunks.length) return "";
-
-  const last = chunks[chunks.length - 1];
-  const joined = chunks.join(" ").replace(/\s+/g, " ").trim();
-
-  // Cumulative unspoken updates: last chunk often holds the full sentence.
-  if (chunks.length > 1 && last.length >= joined.length * 0.85) {
-    return last;
+/**
+ * For a single turn, Pipecat pushes cumulative streaming parts — each newer
+ * part typically contains the full transcript so far for that utterance.
+ * We take the last non-empty part as the definitive text for the bubble.
+ */
+function lastPartText(parts: ConversationMessage["parts"]): string {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const t = partToText(parts[i].text).trim();
+    if (t) return t;
   }
-
-  return joined;
+  return "";
 }
 
 /**
- * One chat bubble per Pipecat conversation message (one user/bot turn).
+ * One chat bubble per Pipecat ConversationMessage (one user/bot utterance).
  * Streaming updates replace the same bubble until the turn is finalized.
+ *
+ * ID uses both timestamp AND array index so that two messages sharing the
+ * same `createdAt` (common in Gemini Live) get distinct, stable IDs.
  */
 export function pipecatMessagesToVoiceEntries(
   messages: ConversationMessage[],
 ): VoiceEntry[] {
   const entries: VoiceEntry[] = [];
 
-  for (const m of messages) {
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
     if (m.role !== "user" && m.role !== "assistant") continue;
 
     const parts = m.parts ?? [];
-    const text = messageToText(parts);
+    const text = lastPartText(parts);
     if (!text) continue;
 
     const messageFinal = m.final !== false;
@@ -48,7 +49,7 @@ export function pipecatMessagesToVoiceEntries(
     const final = messageFinal && lastPartFinal;
 
     entries.push({
-      id: `voice-${m.createdAt}`,
+      id: `voice-${m.createdAt}-${i}`,
       role: m.role,
       text,
       final,
