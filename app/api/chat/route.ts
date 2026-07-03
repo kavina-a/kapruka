@@ -59,7 +59,7 @@ export async function POST(req: Request) {
   const result = streamText({
     model: openai(MODEL),
     system:
-      buildSystemPrompt(userProfile, agentMode, { switching }) +
+      buildSystemPrompt(userProfile, agentMode, { switching, previousMode }) +
       commerceBlock +
       valseaBlock,
     messages: await convertToModelMessages(messages),

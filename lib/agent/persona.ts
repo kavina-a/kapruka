@@ -127,7 +127,7 @@ function fillPromptTokens(template: string, profile: UserProfile): string {
     .replaceAll("{{CALENDAR_FACTS}}", formatCalendarFactsBlock(today));
 }
 
-function modeRulesBlock(mode: AgentMode, switching: boolean): string {
+function modeRulesBlock(mode: AgentMode, switching: boolean, previousMode?: AgentMode): string {
   const spec = promptChatSpec as {
     agent_modes?: { shared_rules?: string[]; chat_rules?: string[]; track_rules?: string[] };
   };
@@ -141,7 +141,15 @@ function modeRulesBlock(mode: AgentMode, switching: boolean): string {
     ...shared.map((r) => `- ${r}`),
     ...specific.map((r) => `- ${r}`),
   ];
-  if (switching) {
+  if (switching && mode === "TRACK" && previousMode === "CHAT") {
+    lines.push(
+      "- MODE SWITCH → TRACK (mandatory human handoff): You are now the tracking side of ChatRuka — same team, different focus. Your FIRST sentence after `[MODE: TRACK]` must feel like a real person taking over, not a system message. Briefly acknowledge what they asked about (delivery, order status, where is my package), then introduce yourself in plain language as the tracking side. Good: 'Ah — for where your order is, I'm on the tracking side. What's the order number from your confirmation email?' Good: 'Got you — delivery status is my lane. Share your Kapruka order number and I'll look it up.' Good: 'Hi — you were asking about that delivery. I'm the tracking side of ChatRuka; pop in your order number and I'll check.' Bad: 'Let's pull up your order.' Bad: 'Switching to track mode.' Bad: jumping straight to a question with no intro. Never say 'I am an AI agent' or 'mode switch'.",
+    );
+  } else if (switching && mode === "CHAT" && previousMode === "TRACK") {
+    lines.push(
+      "- MODE SWITCH → CHAT: Your FIRST line after `[MODE: CHAT]` must be one warm sentence summarising what you found on their order, then you're back to helping them shop or send something.",
+    );
+  } else if (switching) {
     lines.push(
       "- The buyer just switched mode — your FIRST line after the mode tag must be one sentence summarising what you resolved in the previous mode before continuing.",
     );
@@ -170,8 +178,8 @@ export function buildTrackSystemPrompt(profile: UserProfile = {}): string {
 export function buildSystemPrompt(
   profile: UserProfile = {},
   mode: AgentMode = "CHAT",
-  options?: { switching?: boolean },
+  options?: { switching?: boolean; previousMode?: AgentMode },
 ): string {
   const base = mode === "TRACK" ? buildTrackSystemPrompt(profile) : buildChatSystemPrompt(profile);
-  return `${modeRulesBlock(mode, options?.switching ?? false)}\n\n${base}`;
+  return `${modeRulesBlock(mode, options?.switching ?? false, options?.previousMode)}\n\n${base}`;
 }

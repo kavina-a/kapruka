@@ -45,7 +45,8 @@ export function TrackDrawer() {
           <BrandMascot variant="track" className="h-28 w-auto" />
         </div>
         <p className="text-sm text-ink-muted">
-          Enter the Kapruka order number from your confirmation email.
+          Hi — I&apos;m on the tracking side of ChatRuka. Enter your Kapruka order number from
+          your confirmation email and I&apos;ll tell you where things stand.
         </p>
         <div className="flex flex-col gap-2 sm:flex-row">
           <input

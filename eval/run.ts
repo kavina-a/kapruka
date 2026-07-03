@@ -205,11 +205,11 @@ async function runScenario(scenario: Scenario): Promise<ScenarioResult> {
   const resolvedTurns = resolveTurns(scenario.turns);
   const uiMessages = turnsToUIMessages(resolvedTurns);
   const agentMode = resolveAgentMode(uiMessages);
+  const previousMode = inferModeFromHistory(uiMessages.slice(0, -1));
   const switching =
-    inferModeFromHistory(uiMessages.slice(0, -1)) !== agentMode &&
-    resolvedTurns.at(-1)?.role === "user";
+    previousMode !== agentMode && resolvedTurns.at(-1)?.role === "user";
 
-  const system = buildSystemPrompt({}, agentMode, { switching });
+  const system = buildSystemPrompt({}, agentMode, { switching, previousMode });
   const messages = turnsToCoreMessages(resolvedTurns);
   const tools = makeEvalTools(agentMode);
 
