@@ -143,6 +143,20 @@ Twilio/Telnyx/Plivo WebSocket transports — point your SIP trunk webhook at thi
 same `bot()` entry and set `PIPECAT_PIPELINE_MODE=traditional` if you need
 classic STT/TTS on phone lines.
 
+## Deploy to Railway
+
+Root directory: `pipecat-server/`. Uses **Dockerfile** (includes OpenCV system libs — required for SmallWebRTC on Linux).
+
+```bash
+# Required env on Railway
+METERED_TURN_APP=chatruka
+METERED_TURN_API_KEY=...
+RUKA_API_BASE=https://chatruka.vercel.app
+GOOGLE_API_KEY=...          # if PIPECAT_PIPELINE_MODE=realtime
+```
+
+If you see `ImportError: libxcb.so.1` in logs, Railway is building without the Dockerfile system packages — set builder to **Dockerfile** in Railway service settings (or use `railway.toml` in this folder).
+
 ## Security
 
 Set `VOICE_API_TOKEN` here and in Next.js `.env.local`. The voice-tools route

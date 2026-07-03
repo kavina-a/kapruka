@@ -64,6 +64,19 @@ def _patch_webrtc_ice_servers() -> None:
 if __name__ == "__main__":
     import sys
 
+    # Fail fast if OpenCV (cv2) cannot load — bot crashes silently in background otherwise.
+    try:
+        import cv2  # noqa: F401 — required by pipecat SmallWebRTC even for audio-only
+
+        logger.info(f"OpenCV preflight OK ({cv2.__version__})")
+    except ImportError as exc:
+        logger.error(
+            f"OpenCV import failed: {exc}. "
+            "On Railway use the Dockerfile (opencv-python-headless). "
+            "Locally: uv pip uninstall opencv-python && uv sync"
+        )
+        raise SystemExit(1) from exc
+
     if settings.pipeline_mode.value == "realtime" and not settings.google_api_key:
         logger.error("GOOGLE_API_KEY is required for realtime pipeline.")
         raise SystemExit(1)
