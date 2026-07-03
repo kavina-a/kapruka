@@ -154,7 +154,7 @@ def load_settings() -> Settings:
         voice_profile = voice_profile,
         greet_first   = os.getenv("GREET_FIRST", "true").lower() in ("1", "true", "yes"),
         host          = os.getenv("PIPECAT_HOST", "0.0.0.0"),
-        port          = int(os.getenv("PIPECAT_PORT", "7860")),
+        port          = int(os.getenv("PORT") or os.getenv("PIPECAT_PORT", "7860")),
         ruka_api_base   = os.getenv("RUKA_API_BASE", "http://localhost:3000").rstrip("/"),
         voice_api_token = os.getenv("VOICE_API_TOKEN") or None,
 

@@ -14,3 +14,9 @@ dependencies = [
 
 [tool.uv]
 # uv will download Python 3.11+ automatically if pyenv/system python is too old.
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.11"
+typeCheckingMode = "basic"

@@ -41,9 +41,18 @@ async def bot(runner_args: RunnerArguments) -> None:
 
 
 if __name__ == "__main__":
+    import sys
+
     if settings.pipeline_mode.value == "realtime" and not settings.google_api_key:
         logger.error("GOOGLE_API_KEY is required for realtime pipeline.")
         raise SystemExit(1)
+
+    # Pipecat runner defaults to localhost:7860; honour PIPECAT_HOST / PORT for Railway etc.
+    if "--host" not in sys.argv:
+        sys.argv.extend(["--host", settings.host])
+    if "--port" not in sys.argv:
+        sys.argv.extend(["--port", str(settings.port)])
+
     from pipecat.runner.run import main
 
     main()
