@@ -1,0 +1,13 @@
+# Railway Nixpacks — install OpenCV runtime libs if not using Dockerfile builder
+[phases.setup]
+aptPkgs = [
+  "libxcb1",
+  "libgl1",
+  "libglib2.0-0",
+  "libsm6",
+  "libxext6",
+  "libxrender1",
+]
+
+[start]
+cmd = "uv run bot.py"
