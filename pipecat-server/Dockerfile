@@ -1,4 +1,5 @@
-# ChatRuka Pipecat voice server — Railway / Docker
+# ChatRuka Pipecat voice server
+# opencv-python-headless (4.x) is used instead of opencv-python, so no X11/libxcb needed.
 FROM python:3.11-slim-bookworm
 
 WORKDIR /app
@@ -6,10 +7,7 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 COPY pyproject.toml uv.lock ./
-# Pipecat [webrtc] pulls opencv-python (needs libxcb). Swap to headless for audio-only voice.
-RUN uv sync --frozen --no-dev \
-    && uv pip uninstall opencv-python \
-    && uv pip install "opencv-python-headless>=5.0.0.93"
+RUN uv sync --frozen --no-dev
 
 COPY . .
 

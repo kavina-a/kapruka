@@ -5,17 +5,18 @@ description = "ChatRuka Pipecat voice server"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "pipecat-ai[google,webrtc,runner,openai,cartesia,deepgram,elevenlabs]>=1.4.0",
+    # [webrtc] extra is intentionally excluded — it drags in opencv-python which needs
+    # libxcb/X11 libs absent on Railway/headless Linux. We add aiortc + headless directly.
+    "pipecat-ai[google,runner,openai,cartesia,deepgram,elevenlabs]>=1.4.0",
+    "aiortc>=1.9.0",
+    "opencv-python-headless>=4.8.0,<5.0",
     "aiohttp>=3.9.0",
     "python-dotenv>=1.0.0",
     "loguru>=0.7.0",
     "mcp>=1.0.0",
-    "opencv-python-headless>=5.0.0.93",
 ]
 
 [tool.uv]
-# Pipecat [webrtc] pulls opencv-python (needs libxcb on Linux). Prefer headless for Railway.
-override-dependencies = ["opencv-python-headless>=5.0.0.93"]
 
 [tool.pyright]
 venvPath = "."
