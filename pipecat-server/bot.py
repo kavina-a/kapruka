@@ -24,6 +24,7 @@ from pipecat.runner.utils import create_transport
 from pipecat.transports.base_transport import TransportParams
 
 from config import settings
+from ice_config import load_ice_servers
 from pipeline.service import PipelineService
 
 transport_params = {
@@ -40,6 +41,23 @@ async def bot(runner_args: RunnerArguments) -> None:
     await service.run(transport, runner_args)
 
 
+def _patch_webrtc_ice_servers() -> None:
+    """Pipecat runner creates SmallWebRTCRequestHandler with no ICE servers by default."""
+    ice = load_ice_servers()
+    if not ice:
+        return
+
+    from pipecat.transports.smallwebrtc.request_handler import SmallWebRTCRequestHandler
+
+    original_init = SmallWebRTCRequestHandler.__init__
+
+    def patched_init(self, ice_servers=None, **kwargs):  # noqa: ANN001
+        original_init(self, ice_servers=ice_servers or ice, **kwargs)
+
+    SmallWebRTCRequestHandler.__init__ = patched_init
+    logger.info(f"WebRTC ICE servers configured ({len(ice)})")
+
+
 if __name__ == "__main__":
     import sys
 
@@ -52,6 +70,8 @@ if __name__ == "__main__":
         sys.argv.extend(["--host", settings.host])
     if "--port" not in sys.argv:
         sys.argv.extend(["--port", str(settings.port)])
+
+    _patch_webrtc_ice_servers()
 
     from pipecat.runner.run import main
 

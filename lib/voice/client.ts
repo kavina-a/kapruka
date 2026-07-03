@@ -1,5 +1,6 @@
 import { PipecatClient } from "@pipecat-ai/client-js";
 import { SmallWebRTCTransport } from "@pipecat-ai/small-webrtc-transport";
+import { getVoiceIceServers } from "@/lib/voice/ice-servers";
 
 /** Pipecat WebRTC offer endpoint (pipecat-server/bot.py). */
 export const VOICE_OFFER_URL =
@@ -19,6 +20,8 @@ export function createVoiceClient(): PipecatClient {
   voiceClientSingleton = new PipecatClient({
     transport: new SmallWebRTCTransport({
       webrtcRequestParams: { endpoint: VOICE_OFFER_URL },
+      iceServers: getVoiceIceServers(),
+      waitForICEGathering: true,
     }),
     enableMic: true,
     enableCam: false,
