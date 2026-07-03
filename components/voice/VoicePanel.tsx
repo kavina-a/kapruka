@@ -10,6 +10,7 @@ import {
   usePipecatConversation,
 } from "@pipecat-ai/client-react";
 import { RTVIEvent, useRTVIClientEvent } from "@/lib/voice/rtvi";
+import { connectVoice } from "@/lib/voice/connect";
 import { useCommerce } from "@/lib/commerce/store";
 import { ProductCard } from "@/components/products/ProductCard";
 import { BrandMascot } from "@/components/brand/BrandMascot";
@@ -63,7 +64,7 @@ export function VoicePanel() {
     setError(null);
     setStarting(true);
     try {
-      await client.connect();
+      await connectVoice(client);
     } catch (err) {
       setError(
         "I couldn't reach the voice line. Make sure the voice service is running, then try again.",

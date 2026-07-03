@@ -48,6 +48,7 @@ def _patch_webrtc_ice_servers() -> None:
         return
 
     from pipecat.transports.smallwebrtc.request_handler import SmallWebRTCRequestHandler
+    from ice_config import _has_turn
 
     original_init = SmallWebRTCRequestHandler.__init__
 
@@ -55,7 +56,9 @@ def _patch_webrtc_ice_servers() -> None:
         original_init(self, ice_servers=ice_servers or ice, **kwargs)
 
     SmallWebRTCRequestHandler.__init__ = patched_init
-    logger.info(f"WebRTC ICE servers configured ({len(ice)})")
+    logger.info(
+        f"WebRTC ICE configured: {len(ice)} servers, turn={'yes' if _has_turn(ice) else 'NO — will fail on Railway'}"
+    )
 
 
 if __name__ == "__main__":

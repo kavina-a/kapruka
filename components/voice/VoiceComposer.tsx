@@ -9,6 +9,7 @@ import {
   usePipecatClientTransportState,
 } from "@pipecat-ai/client-react";
 import { RTVIEvent, useRTVIClientEvent } from "@/lib/voice/rtvi";
+import { connectVoice } from "@/lib/voice/connect";
 import { useCommerce } from "@/lib/commerce/store";
 import { VoiceOrb } from "@/components/voice/VoiceOrb";
 import { resolveVoiceOrbState } from "@/lib/voice/orb-state";
@@ -52,7 +53,7 @@ export function VoiceComposer() {
     setError(null);
     setStarting(true);
     try {
-      await client.connect();
+      await connectVoice(client);
     } catch (err) {
       setError("Couldn't reach the voice line. Tap to try again.");
       console.error("Voice connect failed:", err);

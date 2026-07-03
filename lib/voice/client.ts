@@ -1,6 +1,5 @@
 import { PipecatClient } from "@pipecat-ai/client-js";
 import { SmallWebRTCTransport } from "@pipecat-ai/small-webrtc-transport";
-import { getVoiceIceServers } from "@/lib/voice/ice-servers";
 
 /** Pipecat WebRTC offer endpoint (pipecat-server/bot.py). */
 export const VOICE_OFFER_URL =
@@ -12,7 +11,7 @@ let voiceClientSingleton: PipecatClient | null = null;
 
 /**
  * Reuse one Pipecat client across hot reloads and voice sessions.
- * Multiple instances leak transport listeners (MaxListenersExceededWarning).
+ * ICE/TURN is applied at connect time via lib/voice/connect.ts (not here).
  */
 export function createVoiceClient(): PipecatClient {
   if (voiceClientSingleton) return voiceClientSingleton;
@@ -20,7 +19,6 @@ export function createVoiceClient(): PipecatClient {
   voiceClientSingleton = new PipecatClient({
     transport: new SmallWebRTCTransport({
       webrtcRequestParams: { endpoint: VOICE_OFFER_URL },
-      iceServers: getVoiceIceServers(),
       waitForICEGathering: true,
     }),
     enableMic: true,
