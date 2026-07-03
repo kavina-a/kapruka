@@ -123,14 +123,30 @@ function makeAddToCartTool(shownProducts?: Array<{ id: string; name: string }>) 
 export const rukaTools = {
   searchGifts: tool({
     description:
-      "Find gifts to show the customer as image cards. `query` = the PRODUCT only (e.g. 'batman toy', 'red roses') — never recipient names like 'brother' or 'mum'. Put recipient/occasion in shopperNote.\n\n" +
-      "CATEGORY ANCHORING (critical for search quality):\n" +
-      "- Specific flower types (tulip, sunflower, orchid, carnation, gerbera, daisy, peony, lily, lavender, freesia, etc.) → always set `occasionId: 'flowers'`. Without it, the search engine returns completely unrelated products.\n" +
-      "- Specific cake types (chocolate cake, ribbon cake, cheesecake, red velvet, etc.) → set `occasionId: 'cakes'`.\n" +
-      "- Specific chocolate types (dark chocolate, pistachio chocolate, Ferrero, Toblerone, etc.) → set `occasionId: 'chocolates'`.\n" +
-      "- Specific perfume types (Dior, CK, floral perfume, etc.) → set `occasionId: 'perfumes'`.\n\n" +
-      "ALTERNATIVES: If exact variety may be missing (e.g. tulips, lilies not in catalogue), pass alternativeQueries with 2-3 similar varieties + the broader category. When matchQuality is 'related': show max 3 cards, use a POSITIVE shopperNote (e.g. 'Tulips are rare here — these fresh picks will land just as beautifully') — never 'nothing matched'. After cards, ask ONE human question: who is it for, what colour they like, or soft vs bold vibe.\n\n" +
-      "POST-CART: After addToCart, run the post-cart moment BEFORE checkout — offer one complement (chocolates, card via suggestGiftMessage) in one casual sentence. Never 'Shall we proceed to checkout?'",
+      "Find products to show as image cards.\n\n" +
+      "Kapruka search = product vertical (occasionId) × product keywords (query). Recipient/occasion → shopperNote ONLY.\n\n" +
+      "RULE A — product type stated → use PRODUCT VERTICAL as occasionId:\n" +
+      "  'perfume for dad' → occasionId:'perfumes', query:'men cologne', shopperNote:'A cologne for Dad'\n" +
+      "  'chocolates for mum' → occasionId:'chocolates', shopperNote:'Something sweet for Mum'\n" +
+      "  'flowers for my wife' → occasionId:'flowers'\n" +
+      "  'jewellery for sis birthday' → occasionId:'jewellery', shopperNote:'Birthday gift for her sister'\n\n" +
+      "RULE B — only occasion/recipient known, NO product hint → USE YOUR OWN KNOWLEDGE to pick the best product vertical:\n" +
+      "  Do NOT just pass occasionId:'father' and hope. Think: what do people actually buy for this?\n" +
+      "  'Father's Day gift' → dads: chocolates, cologne, hampers → pick occasionId:'chocolates' (or 'perfumes' or 'fruit')\n" +
+      "  'something for grandma' → flowers or chocolates → occasionId:'flowers'\n" +
+      "  'anniversary, no idea' → flowers or jewellery → occasionId:'flowers'\n" +
+      "  'birthday for a friend, no hint' → occasionId:'birthday' (Kapruka has this and it works well)\n" +
+      "  Kapruka occasions with DEDICATED categories (use these directly): birthday, anniversary, wedding, mother, corporate, romance, sympathy, newborn\n" +
+      "  For all others: infer the likely product type yourself, then search that vertical.\n\n" +
+      "RULE C — both known → product vertical wins:\n" +
+      "  'jewellery for mum's birthday' → occasionId:'jewellery', not 'birthday'\n\n" +
+      "NEVER put recipient words (dad, mum, brother, friend) in `query` — it breaks the search engine.\n" +
+      "ALWAYS put who it's for in shopperNote.\n\n" +
+      "CATEGORY ANCHORING (critical — omitting this causes garbage results):\n" +
+      "  any flower variety → occasionId:'flowers' | any cake type → occasionId:'cakes'\n" +
+      "  any chocolate → occasionId:'chocolates' | any fragrance/cologne → occasionId:'perfumes'\n\n" +
+      "ALTERNATIVES: matchQuality 'related' → max 3 cards, positive shopperNote, ONE question after.\n" +
+      "POST-CART: one complement offer BEFORE checkout. Never 'Shall we proceed?'",
     inputSchema: z.object({
       query: z
         .string()
@@ -263,7 +279,7 @@ export const rukaTools = {
     description:
       "Track an existing Kapruka order by its order number (from the customer's confirmation email).",
     inputSchema: z.object({
-      orderNumber: z.string().describe("Kapruka order number, e.g. 'VIMP34456CB2'."),
+      orderNumber: z.string().describe("Kapruka order number from the confirmation email."),
     }),
     execute: async ({ orderNumber }) => {
       try {

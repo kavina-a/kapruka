@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { BrandMascot } from "@/components/brand/BrandMascot";
+import { ChatRukaLogo } from "@/components/brand/ChatRukaLogo";
 import { useCommerce } from "@/lib/commerce/store";
 import { useT } from "@/lib/i18n";
 import { MobileMenu } from "./MobileMenu";
@@ -87,14 +88,7 @@ export function Header() {
   return (
     <header className="flex items-center justify-between gap-3 border-b border-brand-700/20 bg-brand-700 px-4 py-3 sm:px-6">
       <div className="flex items-center gap-3">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/logo.png"
-          alt="ChatRuka"
-          className="h-9 w-auto object-contain"
-          draggable={false}
-        />
-     
+        <ChatRukaLogo height={36} className="h-9" />
       </div>
 
       <div className="flex items-center gap-1.5 sm:gap-2">

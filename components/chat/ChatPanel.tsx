@@ -6,6 +6,7 @@ import { useRukaChat } from "./ChatContext";
 import { Message } from "./Message";
 import { Composer } from "./Composer";
 import { ActiveGiftMessageBar } from "@/components/gift-message/GiftMessageCard";
+import { ChatRukaLogo } from "@/components/brand/ChatRukaLogo";
 import { BrandMascot } from "@/components/brand/BrandMascot";
 import { RukaAvatar } from "@/components/brand/RukaAvatar";
 import { OCCASIONS } from "@/lib/catalog/occasions";
@@ -107,13 +108,7 @@ function Greeting({ sendText }: { sendText: (t: string) => void }) {
           transition={{ duration: 0.6 }}
           className="mb-6 flex justify-center"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/logo.png"
-            alt="ChatRuka"
-            className="h-11 w-auto object-contain sm:h-12"
-            draggable={false}
-          />
+          <ChatRukaLogo height={48} className="h-11 sm:h-12" />
         </motion.div>
 
         <motion.h1

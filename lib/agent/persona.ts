@@ -1,4 +1,5 @@
 import type { AgentMode } from "@/lib/agent/modes";
+import { formatCalendarFactsBlock } from "@/lib/commerce/calendar";
 import { colomboToday, colomboTodayHuman, addDays, formatHumanDate } from "@/lib/commerce/dates";
 import { OCCASIONS } from "@/lib/catalog/occasions";
 import type { UserProfile } from "@/lib/commerce/store";
@@ -122,7 +123,8 @@ function fillPromptTokens(template: string, profile: UserProfile): string {
     .replaceAll("{{OCCASION_LIST}}", occasionList)
     .replaceAll("{{TODAY}}", today)
     .replaceAll("{{TODAY_HUMAN}}", colomboTodayHuman())
-    .replaceAll("{{SAFE_DATE}}", formatHumanDate(addDays(today, 2)));
+    .replaceAll("{{SAFE_DATE}}", formatHumanDate(addDays(today, 2)))
+    .replaceAll("{{CALENDAR_FACTS}}", formatCalendarFactsBlock(today));
 }
 
 function modeRulesBlock(mode: AgentMode, switching: boolean): string {

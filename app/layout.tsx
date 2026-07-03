@@ -42,8 +42,12 @@ export const metadata: Metadata = {
     description:
       "Conversational gifting for Sri Lanka. Discover, personalise, and send the perfect gift — all in one chat.",
     type: "website",
+    images: [{ url: "/logo.png", alt: "ChatRuka" }],
   },
-  icons: { icon: "/ruka-mark.svg" },
+  icons: {
+    icon: [{ url: "/logo.png", type: "image/png" }],
+    apple: [{ url: "/logo.png", type: "image/png" }],
+  },
 };
 
 export const viewport: Viewport = {

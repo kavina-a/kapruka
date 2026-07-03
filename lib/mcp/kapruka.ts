@@ -192,6 +192,33 @@ export async function searchGifts(input: SearchGiftsInput): Promise<SearchGiftsR
   let matchQuality: SearchGiftsResult["matchQuality"] = products.length ? "exact" : undefined;
   let searchedFor = effectiveQuery || occasion?.label || "";
 
+  // For recipient-type occasions (father, mother) that may not exist as a
+  // Kapruka MCP category, retry with the fallback product verticals defined
+  // on the occasion itself. This surfaces chocolates, perfumes, etc. when a
+  // specific product interest is unknown but the recipient type is known.
+  if (!products.length && occasion?.fallbackOccasionIds?.length) {
+    const occasionQuery = occasion.query;
+    for (const fallbackId of occasion.fallbackOccasionIds) {
+      const fallbackOcc = findOccasion(fallbackId);
+      if (!fallbackOcc) continue;
+      // Use the product query if we have one, otherwise the occasion's own query term
+      const q = effectiveQuery || occasionQuery;
+      const res = await runLiveAttempts(
+        [{ q, category: fallbackOcc.mcpCategory }, { q: fallbackOcc.query, category: fallbackOcc.mcpCategory }],
+        input,
+      );
+      if (res.products.length) {
+        products = res.products.map((p) => ({
+          ...p,
+          occasions: [...new Set([...(p.occasions ?? []), occasion.id])],
+        }));
+        matchQuality = "category";
+        searchedFor = effectiveQuery || fallbackOcc.label;
+        break;
+      }
+    }
+  }
+
   if (needsFallback && effectiveQuery) {
     const relatedQueries = expandRelatedQueries(effectiveQuery, input.alternativeQueries).slice(0, 5);
     for (const altQuery of relatedQueries) {
@@ -250,12 +277,27 @@ export async function searchGifts(input: SearchGiftsInput): Promise<SearchGiftsR
   });
 
   // Last resort: if a specific variety query matched nothing, still show the vertical.
-  const seedProducts =
+  let seedProducts =
     seed.length > 0
       ? seed
       : occasion?.id
         ? getSeedByOccasion(occasion.id, limit)
         : [];
+
+  // Some occasions (e.g. "father") have no tagged seed products but DO have products
+  // whose names contain the occasion's query term (e.g. "Father's Day Cake").
+  // Fall back to a name-match search against the full seed catalogue.
+  if (!seedProducts.length && occasion?.query) {
+    seedProducts = searchSeed({
+      occasionId: null,
+      query: occasion.query,
+      minPrice: input.minPrice ?? null,
+      maxPrice: input.maxPrice ?? null,
+      inStockOnly: input.inStockOnly,
+      sort: input.sort,
+      limit,
+    });
+  }
 
   if (seedProducts.length) {
     const varietyLabel = effectiveQuery || input.query || "";

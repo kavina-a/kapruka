@@ -26,6 +26,12 @@ export interface Occasion {
   mcpCategory: string;
   query: string;
   keywords: string[];
+  /**
+   * For recipient-based occasions (father, mother, etc.) whose MCP category
+   * may return few results, these product-vertical IDs are tried in order
+   * as search fallbacks when the primary category comes back empty.
+   */
+  fallbackOccasionIds?: string[];
 }
 
 export const OCCASIONS: Occasion[] = [
@@ -83,6 +89,23 @@ export const OCCASIONS: Occasion[] = [
     mcpCategory: "mother",
     query: "mother",
     keywords: ["mother", "mum", "mom", "amma", "mothers day", "mummy", "for my mother"],
+    fallbackOccasionIds: ["flowers", "chocolates", "perfumes", "jewellery", "fruit"],
+  },
+  {
+    id: "father",
+    label: "For Dad",
+    emoji: "👔",
+    blurb: "Something he'll actually use or genuinely enjoy — not another mug.",
+    kind: "occasion",
+    pageSlug: "father",
+    mcpCategory: "father",
+    query: "father",
+    keywords: [
+      "father", "dad", "fathers day", "father's day", "thaththa", "appachchi", "appa",
+      "for my dad", "for my father", "for dad", "dads birthday", "dad's birthday",
+    ],
+    // father may not be a Kapruka MCP category; fall through to popular dad-gift verticals
+    fallbackOccasionIds: ["chocolates", "perfumes", "fruit", "cakes", "flowers"],
   },
   {
     id: "newborn",
