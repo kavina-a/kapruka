@@ -87,6 +87,13 @@ export function resolveAgentMode(messages: UIMessage[]): AgentMode {
   return fromHistory;
 }
 
+/** True when neither the track nor the chat regex fired — the ambiguous case worth a cheap LLM classification. */
+export function isModeAmbiguous(messages: UIMessage[]): boolean {
+  const userText = getLatestUserText(messages);
+  if (!userText.trim()) return false;
+  return !isTrackIntent(userText) && !isChatIntent(userText);
+}
+
 export function modeLabel(mode: AgentMode): string {
   return mode === "TRACK" ? "Order tracking" : "Gift chat";
 }

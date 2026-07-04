@@ -7,15 +7,17 @@ import { Message } from "./Message";
 import { Composer } from "./Composer";
 import { ActiveGiftMessageBar } from "@/components/gift-message/GiftMessageCard";
 import { ChatRukaLogo } from "@/components/brand/ChatRukaLogo";
-import { BrandMascot } from "@/components/brand/BrandMascot";
 import { RukaAvatar } from "@/components/brand/RukaAvatar";
-import { OCCASIONS } from "@/lib/catalog/occasions";
 import { useCommerce } from "@/lib/commerce/store";
 import type { VoiceEntry } from "@/lib/commerce/store";
 import { buildThread } from "@/lib/chat/buildThread";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { ProductCarousel } from "@/components/products/ProductCarousel";
+import { GiftFinderCard } from "@/components/chat/GiftFinderCard";
+import { buildGiftFinderMessage } from "@/lib/chat/gift-finder";
+import type { GiftFinderState } from "@/lib/catalog/gift-finder-types";
+import { GIFT_RELATIONSHIPS_BY_ID } from "@/lib/catalog/gift-relationships";
 
 function colomboHour(): number {
   return parseInt(
@@ -35,8 +37,6 @@ function timeGreeting(): string {
   return "Good evening";
 }
 
-const QUICK_IDS = ["birthday", "romance", "mother", "cakes", "flowers", "newborn", "chocolates", "jewellery"];
-
 function TypingRow() {
   return (
     <div className="flex items-center gap-3">
@@ -50,7 +50,6 @@ function TypingRow() {
   );
 }
 
-/** Voice transcript bubble — matches text chat layout; shows live partials while speaking. */
 function VoiceMessage({ entry }: { entry: VoiceEntry }) {
   const isUser = entry.role === "user";
   const partial = !entry.final;
@@ -87,17 +86,12 @@ function VoiceMessage({ entry }: { entry: VoiceEntry }) {
   );
 }
 
-function Greeting({ sendText }: { sendText: (t: string) => void }) {
-  const openVoice = useCommerce((s) => s.openVoice);
+function Greeting() {
   const name = useCommerce((s) => s.userProfile.name);
   const { t } = useT();
-  const quickOccasions = OCCASIONS.filter((o) => QUICK_IDS.includes(o.id));
 
   const greet = timeGreeting();
   const headline = name ? `${greet}, ${name}` : greet;
-  // const subtext = name
-  //   ? `Who are we gifting today? Tell me the occasion and I'll find something that actually lands.`
-  //   : `Tell me who it's for and the occasion — I'll find something that lands, then take you to checkout anywhere in Sri Lanka.`;
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 pb-4 sm:px-5">
@@ -131,16 +125,56 @@ function Greeting({ sendText }: { sendText: (t: string) => void }) {
             {t("composerTagline")}
           </motion.p>
         </div>
+      </div>
+    </div>
+  );
+}
 
-        <div className="mt-3 flex justify-center">
-          {/* <button
-            onClick={openVoice}
-            className="inline-flex min-h-11 items-center gap-2 rounded-full border border-brand-300/40 bg-brand-100/60 px-4 py-2.5 text-sm font-medium text-brand-600 transition hover:bg-brand-100"
-          >
-            <BrandMascot variant="call" size={28} />
-            <span className="sm:hidden">Call ChatRuka</span>
-          </button> */}
-        </div>
+/** Warm spoken line Ruka says before showing the picker chips. */
+function rukaPickerIntro(prefill: Partial<GiftFinderState> | null): string {
+  const rel = prefill?.relationship
+    ? GIFT_RELATIONSHIPS_BY_ID[prefill.relationship]?.label
+    : null;
+  if (rel) return `No worries — let me ask you a couple of quick things about her so I can pull ideas that actually fit.`;
+  return `No worries — tell me a little about them and I'll pull ideas that actually fit.`;
+}
+
+/** Category picker surfaced mid-conversation when the buyer is stuck. */
+function GiftFinderInline({
+  sendText,
+}: {
+  sendText: (text: string) => void;
+}) {
+  const setGiftFinderState = useCommerce((s) => s.setGiftFinderState);
+  const closeGiftFinder = useCommerce((s) => s.closeGiftFinder);
+  const prefill = useCommerce((s) => s.giftFinderPrefill);
+  const setGiftFinderPrefill = useCommerce((s) => s.setGiftFinderPrefill);
+
+  const handleComplete = (state: GiftFinderState) => {
+    setGiftFinderState(state);
+    setGiftFinderPrefill(null);
+    closeGiftFinder();
+    sendText(buildGiftFinderMessage(state));
+  };
+
+  const handleDismiss = () => {
+    setGiftFinderPrefill(null);
+    closeGiftFinder();
+  };
+
+  return (
+    <div className="flex gap-3">
+      <RukaAvatar size={34} className="mt-0.5 shrink-0" />
+      <div className="min-w-0 flex-1 space-y-3">
+        {/* Ruka's spoken acknowledgment line */}
+        <p className="text-[15px] leading-relaxed text-ink">
+          {rukaPickerIntro(prefill)}
+        </p>
+        <GiftFinderCard
+          initial={prefill ?? undefined}
+          onComplete={handleComplete}
+          onDismiss={handleDismiss}
+        />
       </div>
     </div>
   );
@@ -152,6 +186,7 @@ export function ChatPanel() {
   const voiceOpen = useCommerce((s) => s.voiceOpen);
   const voiceMessages = useCommerce((s) => s.voiceMessages);
   const voiceProductSets = useCommerce((s) => s.voiceProductSets);
+  const giftFinderOpen = useCommerce((s) => s.giftFinderOpen);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [paymentWelcome, setPaymentWelcome] = useState<string | null>(null);
 
@@ -177,12 +212,12 @@ export function ChatPanel() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [thread, status, voiceOpen]);
+  }, [thread, status, voiceOpen, giftFinderOpen]);
 
   return (
     <div className="flex h-full flex-col">
       {showGreeting ? (
-        <Greeting sendText={sendText} />
+        <Greeting />
       ) : (
         <div className="scroll-soft flex-1 overflow-y-auto">
           <div className="mx-auto flex max-w-2xl flex-col gap-5 px-4 py-6 sm:px-6">
@@ -213,6 +248,8 @@ export function ChatPanel() {
               }
               return <VoiceMessage key={item.key} entry={item.entry} />;
             })}
+
+            {giftFinderOpen && <GiftFinderInline sendText={sendText} />}
 
             {showTyping && <TypingRow />}
 

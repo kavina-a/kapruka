@@ -16,6 +16,11 @@ import { OCCASIONS } from "@/lib/catalog/occasions";
 import { colomboToday } from "@/lib/commerce/dates";
 import type { CommerceContext } from "@/lib/commerce/types";
 import type { AgentMode } from "@/lib/agent/modes";
+import type { GiftFinderState } from "@/lib/catalog/gift-finder-types";
+import { interpretRefinement, isGeminiConfigured } from "@/lib/agent/classify";
+import { applyGiftFinderToSearchInput } from "@/lib/agent/apply-gift-finder-search";
+import { curateGiftPicks } from "@/lib/agent/curate-picks";
+import { isGiftFinderComplete } from "@/lib/catalog/gift-finder-types";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
@@ -120,8 +125,15 @@ function makeAddToCartTool(shownProducts?: Array<{ id: string; name: string }>) 
   });
 }
 
-export const rukaTools = {
-  searchGifts: tool({
+function makeSearchGiftsTool(giftFinderState?: GiftFinderState | null) {
+  const finderActive = isGiftFinderComplete(giftFinderState);
+  const finderHint = finderActive
+    ? "\n\nGIFT FINDER ACTIVE: the buyer completed the chip flow (relationship, personality, budget). " +
+      "See 'Gift finder picks' in your system prompt. Call searchGifts ONCE — the system curates 4–6 picks " +
+      "with per-card reasons automatically. Do NOT re-ask who it's for or their personality."
+    : "";
+
+  return tool({
     description:
       "Find products to show as image cards.\n\n" +
       "Kapruka search = product vertical (occasionId) × product keywords (query). Recipient/occasion → shopperNote ONLY.\n\n" +
@@ -146,7 +158,8 @@ export const rukaTools = {
       "  any flower variety → occasionId:'flowers' | any cake type → occasionId:'cakes'\n" +
       "  any chocolate → occasionId:'chocolates' | any fragrance/cologne → occasionId:'perfumes'\n\n" +
       "ALTERNATIVES: matchQuality 'related' → max 3 cards, positive shopperNote, ONE question after.\n" +
-      "POST-CART: one complement offer BEFORE checkout. Never 'Shall we proceed?'",
+      "POST-CART: one complement offer BEFORE checkout. Never 'Shall we proceed?'" +
+      finderHint,
     inputSchema: z.object({
       query: z
         .string()
@@ -179,25 +192,71 @@ export const rukaTools = {
     }),
     execute: async ({ shopperNote, ...input }) => {
       try {
-        const res = await searchGifts({ ...input, limit: 8 });
+        // Chip-selected budget/traits are structured ground truth — enforce the
+        // budget deterministically (no LLM guesswork) and only fill gaps the
+        // model left blank, never override what it explicitly chose.
+        const effectiveInput = applyGiftFinderToSearchInput(input, giftFinderState);
+
+        const res = await searchGifts({ ...effectiveInput, limit: finderActive ? 12 : 8 });
         const isSubstitution = res.matchQuality === "related";
-        const productLimit = isSubstitution ? 3 : 8;
+        const productLimit = isSubstitution ? 3 : finderActive ? 12 : 8;
         const note = shopperNote?.trim() || res.note;
+
+        let products = res.products.slice(0, productLimit);
+        let pickReasons: Record<string, string> | undefined;
+
+        if (finderActive && giftFinderState && products.length) {
+          const curated = await curateGiftPicks(products, giftFinderState);
+          products = curated.products;
+          pickReasons = curated.pickReasons;
+        } else {
+          products = products.slice(0, isSubstitution ? 3 : 8);
+        }
+
         return {
           ok: true as const,
           source: res.source,
           occasion: res.occasion,
           note,
+          pickReasons,
           matchQuality: res.matchQuality,
           searchedFor: res.searchedFor,
-          count: Math.min(res.products.length, productLimit),
-          products: res.products.slice(0, productLimit),
+          count: products.length,
+          products,
         };
       } catch (err) {
         return errorPayload(err);
       }
     },
-  }),
+  });
+}
+
+function makeRefineGiftFinderTool(giftFinderState: GiftFinderState) {
+  return tool({
+    description:
+      "Call when the buyer sends a short free-text tweak to their gift-finder search — e.g. " +
+      "'something cheaper', 'more outdoorsy options', 'no chocolates please', 'she doesn't like jewellery'. " +
+      "Only use this when a gift finder session exists (see 'Gift finder picks' in your system prompt) and " +
+      "the message is clearly adjusting it, not starting a brand-new search. This tool ONLY updates the " +
+      "stored picks — it does not search. ALWAYS follow it with a searchGifts call using the updated criteria.",
+    inputSchema: z.object({
+      feedbackText: z.string().describe("The buyer's exact tweak request, verbatim."),
+    }),
+    execute: async ({ feedbackText }) => {
+      const patch = await interpretRefinement(feedbackText, giftFinderState);
+      if (!patch || Object.keys(patch).length === 0) {
+        return {
+          ok: false as const,
+          error: "Couldn't tell what to change — ask them to be a bit more specific.",
+        };
+      }
+      return { ok: true as const, patch };
+    },
+  });
+}
+
+export const rukaTools = {
+  searchGifts: makeSearchGiftsTool(),
 
   getGiftDetails: tool({
     description:
@@ -356,6 +415,16 @@ export const rukaTools = {
         ),
     }),
     execute: async (input) => ({ ok: true as const, ...input }),
+  }),
+
+  showGiftFinder: tool({
+    description:
+      "Show the structured gift finder (relationship → personality → budget) when the buyer is stuck — " +
+      "e.g. 'idk', 'I don't know', 'no idea', 'you pick'. Do NOT call searchGifts in the same turn. " +
+      "Do NOT call on the first message. After calling, say one warm line like 'No worries — " +
+      "pick a few things about them and I'll pull curated ideas.' Never search before they finish the chips.",
+    inputSchema: z.object({}),
+    execute: async () => ({ ok: true as const }),
   }),
 
   suggestGiftMessage: tool({
@@ -558,9 +627,13 @@ export function createRukaTools(
 
   return {
     ...chatTools,
+    searchGifts: makeSearchGiftsTool(commerceContext?.giftFinderState),
     addToCart: makeAddToCartTool(commerceContext?.shownProducts),
     removeFromCart: makeRemoveFromCartTool(cartItems),
     setPriceAlert: makeSetPriceAlertTool(commerceContext?.clientId),
+    ...(commerceContext?.giftFinderState && isGiftFinderComplete(commerceContext.giftFinderState) && isGeminiConfigured()
+      ? { refineGiftFinder: makeRefineGiftFinderTool(commerceContext.giftFinderState) }
+      : {}),
   };
 }
 

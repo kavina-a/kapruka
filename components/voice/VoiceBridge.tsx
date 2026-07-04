@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { usePipecatConversation } from "@pipecat-ai/client-react";
 import { RTVIEvent, useRTVIClientEvent } from "@/lib/voice/rtvi";
 import { useCommerce } from "@/lib/commerce/store";
+import { isGiftFinderUncertainty } from "@/lib/chat/gift-finder";
 import { pipecatMessagesToVoiceEntries } from "@/lib/voice/transcript";
 import { normalizeVoiceProduct, parseVoiceServerMessage } from "@/lib/voice/serverMessage";
 
@@ -16,10 +17,23 @@ import { normalizeVoiceProduct, parseVoiceServerMessage } from "@/lib/voice/serv
 export function VoiceBridge() {
   const { messages } = usePipecatConversation();
   const mergeVoiceTranscript = useCommerce((s) => s.mergeVoiceTranscript);
+  const handledUncertaintyRef = useRef<string | null>(null);
 
   // Sync Pipecat conversation turns to Zustand — includes partial (in-progress) transcripts.
   useEffect(() => {
-    mergeVoiceTranscript(pipecatMessagesToVoiceEntries(messages));
+    const entries = pipecatMessagesToVoiceEntries(messages);
+    mergeVoiceTranscript(entries);
+
+    const finalUser = entries.filter((e) => e.final && e.role === "user");
+    const last = finalUser[finalUser.length - 1];
+    if (!last || !isGiftFinderUncertainty(last.text)) return;
+    if (handledUncertaintyRef.current === last.id) return;
+
+    const priorTurns = entries.filter((e) => e.final && e.id !== last.id).length;
+    if (priorTurns === 0) return;
+
+    handledUncertaintyRef.current = last.id;
+    useCommerce.getState().openGiftFinder();
   }, [messages, mergeVoiceTranscript]);
 
   const onServerMessage = useCallback((data: unknown) => {
@@ -78,6 +92,10 @@ export function VoiceBridge() {
       }
       case "track_order": {
         store.openTrack();
+        break;
+      }
+      case "show_gift_finder": {
+        store.openGiftFinder();
         break;
       }
       case "delivery_quote":

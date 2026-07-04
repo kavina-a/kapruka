@@ -16,6 +16,7 @@ import {
 import { BrandMascot } from "@/components/brand/BrandMascot";
 import { RukaAvatar } from "@/components/brand/RukaAvatar";
 import { useRukaChat } from "@/components/chat/ChatContext";
+import { sessionTitleFromMessages } from "@/lib/chat/session-title";
 import { useCommerce } from "@/lib/commerce/store";
 import { useT } from "@/lib/i18n";
 import { OCCASIONS } from "@/lib/catalog/occasions";
@@ -28,7 +29,7 @@ const RAIL_OCCASIONS = ["birthday", "romance", "mother", "cakes", "flowers", "co
 import { AppInfoModal, type InfoKey } from "@/components/app/AppInfoModal";
 
 export function LeftRail() {
-  const { messages, reset, sendText } = useRukaChat();
+  const { messages, reset, sendText, sessions, sessionId, switchSession } = useRukaChat();
   const openVoice = useCommerce((s) => s.openVoice);
   const savedRecipients = useCommerce((s) => s.savedRecipients);
   const setDelivery = useCommerce((s) => s.setDelivery);
@@ -79,15 +80,36 @@ export function LeftRail() {
     document.documentElement.lang = lang === "si" ? "si" : lang === "ta" ? "ta" : "en";
   }, [lang]);
 
-  const sessionTitle = useMemo(() => {
-    const firstUser = messages.find((m) => m.role === "user");
-    const text = firstUser?.parts
-      .filter((p) => p.type === "text")
-      .map((p) => (p as { text: string }).text)
-      .join(" ")
-      .trim();
-    return text || t("newConversation");
-  }, [messages, t]);
+  const currentTitle = useMemo(
+    () => sessionTitleFromMessages(messages, t("newConversation")),
+    [messages, t],
+  );
+
+  const chatSessions = useMemo(() => {
+    const list = sessions.map((s) => ({ ...s }));
+    if (!sessionId) {
+      if (messages.length) {
+        list.unshift({
+          sessionId: "local",
+          title: currentTitle,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      return list;
+    }
+
+    const idx = list.findIndex((s) => s.sessionId === sessionId);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], title: currentTitle || list[idx].title };
+    } else {
+      list.unshift({
+        sessionId,
+        title: currentTitle,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    return list;
+  }, [sessions, sessionId, messages.length, currentTitle]);
 
   const railOccasions = OCCASIONS.filter((o) => RAIL_OCCASIONS.includes(o.id));
 
@@ -130,14 +152,46 @@ export function LeftRail() {
             <Divider />
             <SectionHeader>{t("thisSession")}</SectionHeader>
             <div className="px-2">
-              <div className="flex items-center gap-3 rounded-lg bg-canvas-2 px-[10px] py-2 text-sm text-ink">
-                <span className="grid size-5 shrink-0 place-items-center">
-                  <Sparkles className="size-4 text-gold-400" />
-                </span>
-                <span className="truncate whitespace-nowrap opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-                  {sessionTitle}
-                </span>
-              </div>
+              {chatSessions.length > 0 ? (
+                chatSessions.map((s) => {
+                  const active = s.sessionId === sessionId;
+                  return (
+                    <button
+                      key={s.sessionId}
+                      type="button"
+                      onClick={() => {
+                        if (active) return;
+                        switchSession(s.sessionId);
+                      }}
+                      title={s.title}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-lg px-[10px] py-2 text-left text-sm transition",
+                        active
+                          ? "bg-canvas-2 text-ink"
+                          : "text-ink-muted hover:bg-canvas-2 hover:text-ink",
+                      )}
+                    >
+                      <span className="grid size-5 shrink-0 place-items-center">
+                        <Sparkles
+                          className={cn("size-4", active ? "text-gold-400" : "text-ink-faint")}
+                        />
+                      </span>
+                      <span className="truncate whitespace-nowrap opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+                        {s.title}
+                      </span>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="flex items-center gap-3 rounded-lg bg-canvas-2 px-[10px] py-2 text-sm text-ink">
+                  <span className="grid size-5 shrink-0 place-items-center">
+                    <Sparkles className="size-4 text-gold-400" />
+                  </span>
+                  <span className="truncate whitespace-nowrap opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+                    {currentTitle}
+                  </span>
+                </div>
+              )}
             </div>
 
             <Divider />

@@ -68,8 +68,14 @@ def build_system_instruction() -> str:
 
 # Tools
 - search_gifts (occasion one of: {occasions})
+- show_gift_finder: when they're stuck ("don't know", "no idea", "you pick") AFTER you've already talked — opens the same category picker as text chat. Not on the first turn.
 - get_gift_details, add_to_cart, open_checkout, show_checkout_form, suggest_gift_message
 - find_delivery_cities, check_delivery, track_order
+
+# Gift flow (match text chat)
+- Start conversation-first — learn who it's for from their words; don't lead with the picker.
+- If they're unsure what product type to get, call show_gift_finder; they pick Kapruka categories on screen (optional budget).
+- After they pick on screen, call search_gifts using the categories they chose (product verticals).
 
 Today is {today_human} (Asia/Colombo). Safe soon delivery: ~{soon}.
 

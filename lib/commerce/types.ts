@@ -7,6 +7,8 @@
 // be driven from a different surface (e.g. WhatsApp) without a rewrite.
 // ---------------------------------------------------------------------------
 
+import type { GiftFinderState } from "@/lib/catalog/gift-finder-types";
+
 export type CurrencyCode = "LKR" | "USD" | "GBP" | "EUR" | "AUD" | "CAD";
 
 export type StockLevel = "low" | "medium" | "high" | "unknown";
@@ -166,6 +168,8 @@ export interface CommerceContext {
   shownProducts?: Array<{ id: string; name: string }>;
   /** Anonymous device id — ties orders, alerts, and sessions together. */
   clientId?: string;
+  /** Structured signals captured by the gift-finder chip flow, when used this session. */
+  giftFinderState?: GiftFinderState | null;
 }
 
 /** A lightweight order record persisted to Neon after each confirmed order. */

@@ -42,6 +42,7 @@ const TOOL_PENDING_LABEL: Record<string, string> = {
   "tool-searchYouTubeVideos": "Finding videos…",
   "tool-visualizeProduct": "Generating a visual…",
   "tool-showCheckoutForm": "Opening checkout…",
+  "tool-showGiftFinder": "Opening gift picker…",
   "tool-suggestGiftMessage": "Writing your gift message…",
   "tool-optimizeBudget": "Mapping out your options…",
   "tool-addToCart": "Adding to your basket…",
@@ -55,6 +56,7 @@ const SILENT_TOOLS = new Set([
   "tool-updateCheckoutDetails",
   "tool-rememberRecipientDislike",
   "tool-setPriceAlert",
+  "tool-showGiftFinder",
 ]);
 
 function ModeBadge({ mode }: { mode: AgentMode }) {
@@ -457,6 +459,7 @@ export function Message({ message }: { message: UIMessage }) {
                     key={idx}
                     products={products}
                     note={out.note as string | undefined}
+                    pickReasons={out.pickReasons as Record<string, string> | undefined}
                     source={out.source as "live" | "seed" | undefined}
                   />
                 );

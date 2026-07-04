@@ -91,6 +91,35 @@ export async function getSession(sessionId: string): Promise<SessionRow | null> 
   };
 }
 
+export interface SessionSummaryRow {
+  id: string;
+  updated_at: string;
+  messages: UIMessage[];
+  recipient_name: string | null;
+}
+
+export async function listSessions(
+  clientId: string,
+  limit = 20,
+): Promise<SessionSummaryRow[]> {
+  const sql = getDb();
+  const rows = (await sql`
+    SELECT id, updated_at, messages, recipient_name
+    FROM sessions
+    WHERE client_id = ${clientId}
+      AND jsonb_array_length(messages) > 0
+    ORDER BY updated_at DESC
+    LIMIT ${limit}
+  `) as SessionSummaryRow[];
+
+  return rows.map((row) => ({
+    ...row,
+    messages: (typeof row.messages === "string"
+      ? JSON.parse(row.messages)
+      : row.messages) as UIMessage[],
+  }));
+}
+
 export async function getLatestSession(clientId: string): Promise<SessionRow | null> {
   const sql = getDb();
   const rows = (await sql`

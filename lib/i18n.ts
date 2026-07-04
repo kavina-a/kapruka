@@ -7,7 +7,7 @@ type Entry = Record<Lang, string>;
 
 export const STRINGS = {
   newGift: { en: "New gift", si: "නව තෑග්ග", ta: "புதிய பரிசு" },
-  thisSession: { en: "This session", si: "මෙම සැසිය", ta: "இந்த அமர்வு" },
+  thisSession: { en: "Recent chats", si: "මෑත සංවාද", ta: "சமீபத்திய உரையாடல்கள்" },
   occasions: { en: "Occasions", si: "අවස්ථා", ta: "சந்தர்ப்பங்கள்" },
   savedRecipients: { en: "Saved recipients", si: "සුරැකි ලබන්නන්", ta: "சேமித்த பெறுநர்கள்" },
   noRecipients: {

@@ -8,7 +8,9 @@ import {
 import { buildSystemPrompt } from "@/lib/agent/persona";
 import { buildCommerceContextBlock } from "@/lib/agent/commerce-context";
 import { createRukaTools } from "@/lib/agent/tools";
-import { inferModeFromHistory, resolveAgentMode } from "@/lib/agent/modes";
+import { getLatestUserText, inferModeFromHistory, isModeAmbiguous, resolveAgentMode } from "@/lib/agent/modes";
+import { classifyIntent } from "@/lib/agent/classify";
+import { isGiftFinderUncertainty } from "@/lib/chat/gift-finder";
 import type { CommerceContext } from "@/lib/commerce/types";
 import type { Lang, UserProfile } from "@/lib/commerce/store";
 import { enrichUserMessage } from "@/lib/valsea/preprocess";
@@ -47,10 +49,32 @@ export async function POST(req: Request) {
   const commerceBlock = commerceContext ? `\n\n${buildCommerceContextBlock(commerceContext)}` : "";
 
   const previousMode = inferModeFromHistory(messages);
-  const agentMode = resolveAgentMode(messages);
+  let agentMode = resolveAgentMode(messages);
+
+  // The regex fast-path (lib/agent/modes.ts) is free and catches obvious cases
+  // instantly. Only when it's genuinely ambiguous do we spend one tiny Gemini
+  // call to disambiguate — cheaper and more accurate than guessing, and far
+  // cheaper than letting the main GPT-4o call sort it out mid-conversation.
+  if (agentMode === "CHAT" && isModeAmbiguous(messages)) {
+    const latest = getLatestUserText(messages);
+    const intent = await classifyIntent(latest);
+    if (intent === "order_tracking") agentMode = "TRACK";
+  }
+
   const switching = previousMode !== agentMode;
 
   const lastUserText = extractLastUserText(messages);
+  const uncertaintyTurn =
+    lastUserText &&
+    isGiftFinderUncertainty(lastUserText) &&
+    messages.filter((m) => m.role === "user").length > 1;
+
+  const uncertaintyBlock = uncertaintyTurn
+    ? "\n\n# URGENT — buyer is stuck\nThe buyer just said they don't know what to pick. " +
+      "You MUST call showGiftFinder and MUST NOT call searchGifts this turn. " +
+      "One warm sentence only — the chip picker handles the rest."
+    : "";
+
   const valseaEnrichment = lastUserText
     ? await enrichUserMessage(lastUserText, uiLang)
     : null;
@@ -61,6 +85,7 @@ export async function POST(req: Request) {
     system:
       buildSystemPrompt(userProfile, agentMode, { switching, previousMode }) +
       commerceBlock +
+      uncertaintyBlock +
       valseaBlock,
     messages: await convertToModelMessages(messages),
     tools: createRukaTools(commerceContext, agentMode),

@@ -29,6 +29,8 @@ function isVoiceServerMessage(value: unknown): value is VoiceServerMessage {
       return isRecord(value.quote);
     case "track_order":
       return isRecord(value.order);
+    case "show_gift_finder":
+      return true;
     default:
       return false;
   }

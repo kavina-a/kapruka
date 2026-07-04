@@ -52,6 +52,11 @@ export interface VoiceTrackOrderMessage {
   order: TrackedOrder;
 }
 
+/** Opens the same Kapruka category picker as text chat's showGiftFinder tool. */
+export interface VoiceShowGiftFinderMessage {
+  type: "show_gift_finder";
+}
+
 export type VoiceServerMessage =
   | VoiceProductsMessage
   | VoiceOpenProductMessage
@@ -60,4 +65,5 @@ export type VoiceServerMessage =
   | VoiceShowCheckoutFormMessage
   | VoiceSuggestGiftMessage
   | VoiceDeliveryQuoteMessage
-  | VoiceTrackOrderMessage;
+  | VoiceTrackOrderMessage
+  | VoiceShowGiftFinderMessage;

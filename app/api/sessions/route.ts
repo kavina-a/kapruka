@@ -5,8 +5,10 @@ import {
   createSession,
   getLatestSession,
   getSession,
+  listSessions,
   upsertSession,
 } from "@/lib/db/sessions";
+import { sessionTitleFromMessages } from "@/lib/chat/session-title";
 
 export const runtime = "nodejs";
 
@@ -38,6 +40,21 @@ export async function GET(req: NextRequest) {
     }
 
     if (clientId) {
+      const list = req.nextUrl.searchParams.get("list");
+      if (list === "1" || list === "true") {
+        const rows = await listSessions(clientId, 25);
+        const sessions = rows.map((row) => ({
+          sessionId: row.id,
+          title:
+            sessionTitleFromMessages(row.messages) ||
+            row.recipient_name ||
+            "New conversation",
+          updatedAt: row.updated_at,
+          recipientName: row.recipient_name,
+        }));
+        return NextResponse.json({ ok: true, sessions });
+      }
+
       const session = await getLatestSession(clientId);
       if (!session) {
         return NextResponse.json({ ok: true, session: null });

@@ -18,10 +18,11 @@ const SAY_MORE_CHIPS = [
 interface ProductCarouselProps {
   products: Product[];
   note?: string;
+  pickReasons?: Record<string, string>;
   source?: "live" | "seed";
 }
 
-export function ProductCarousel({ products, note, source }: ProductCarouselProps) {
+export function ProductCarousel({ products, note, pickReasons, source }: ProductCarouselProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const openTray = useCommerce((s) => s.openTray);
   const trayOpen = useCommerce((s) => s.trayOpen);
@@ -89,6 +90,7 @@ export function ProductCarousel({ products, note, source }: ProductCarouselProps
                 product={p}
                 rank={i}
                 totalInSet={items.length}
+                note={pickReasons?.[p.id]}
                 draggable
               />
             </div>

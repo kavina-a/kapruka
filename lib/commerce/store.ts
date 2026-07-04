@@ -11,6 +11,7 @@ import type {
   Product,
   SenderDetails,
 } from "./types";
+import type { GiftFinderState } from "@/lib/catalog/gift-finder-types";
 
 export type CheckoutStep =
   | "review"
@@ -111,6 +112,15 @@ interface CommerceState {
   setSender: (patch: Partial<SenderDetails>) => void;
   setGiftMessage: (msg: string, source?: GiftMessageSource) => void;
   clearGiftMessage: () => void;
+
+  // ---- Gift finder chip flow (structured elicitation state) ----
+  giftFinderState: GiftFinderState | null;
+  setGiftFinderState: (s: GiftFinderState | null) => void;
+  giftFinderOpen: boolean;
+  openGiftFinder: () => void;
+  closeGiftFinder: () => void;
+  giftFinderPrefill: Partial<GiftFinderState> | null;
+  setGiftFinderPrefill: (h: Partial<GiftFinderState> | null) => void;
 
   quote: DeliveryQuote | null;
   setQuote: (q: DeliveryQuote | null) => void;
@@ -289,6 +299,14 @@ export const useCommerce = create<CommerceState>()(
           };
         }),
       clearGiftMessage: () => set({ giftMessage: "", giftMessageSource: null }),
+
+      giftFinderState: null,
+      setGiftFinderState: (giftFinderState) => set({ giftFinderState }),
+      giftFinderOpen: false,
+      openGiftFinder: () => set({ giftFinderOpen: true }),
+      closeGiftFinder: () => set({ giftFinderOpen: false }),
+      giftFinderPrefill: null,
+      setGiftFinderPrefill: (giftFinderPrefill) => set({ giftFinderPrefill }),
 
       quote: null,
       setQuote: (quote) => set({ quote }),

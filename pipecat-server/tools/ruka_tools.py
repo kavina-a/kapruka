@@ -243,6 +243,15 @@ class RukaTools:
             }
         )
 
+    async def show_gift_finder(self, params: FunctionCallParams) -> None:
+        await self._push({"type": "show_gift_finder"})
+        await params.result_callback(
+            {
+                "shown": True,
+                "note": "Category picker is on screen — caller can tap categories and optional budget.",
+            }
+        )
+
     @property
     def schemas(self) -> list[FunctionSchema]:
         return [
@@ -254,7 +263,7 @@ class RukaTools:
                     "occasion": {
                         "type": "string",
                         "enum": [
-                            "birthday", "anniversary", "romance", "wedding", "mother",
+                            "birthday", "anniversary", "romance", "wedding", "mother", "father",
                             "newborn", "sympathy", "corporate", "cakes", "flowers",
                             "chocolates", "perfumes", "fruit", "jewellery", "toys",
                         ],
@@ -336,6 +345,18 @@ class RukaTools:
                 properties={"order_number": {"type": "string"}},
                 required=["order_number"],
                 handler=self.track_order,
+            ),
+            FunctionSchema(
+                name="show_gift_finder",
+                description=(
+                    "Show the Kapruka category picker on screen when the caller is stuck — "
+                    "e.g. they say they don't know what to get, no idea, you pick. "
+                    "Do NOT call on the first turn or before they've expressed uncertainty. "
+                    "Have a short conversation first; then one warm spoken line after calling."
+                ),
+                properties={},
+                required=[],
+                handler=self.show_gift_finder,
             ),
         ]
 

@@ -7,6 +7,8 @@ import {
   KaprukaError,
 } from "@/lib/mcp/kapruka";
 import { toCard } from "@/lib/catalog/seed";
+import { applyGiftFinderToSearchInput } from "@/lib/agent/apply-gift-finder-search";
+import { getVoiceGiftFinderState } from "@/lib/voice/gift-finder-context";
 
 export const runtime = "nodejs";
 
@@ -51,14 +53,19 @@ export async function POST(req: Request) {
   try {
     switch (tool) {
       case "search_gifts": {
-        const res = await searchGifts({
-          query: typeof args.query === "string" ? args.query : undefined,
-          occasionId: typeof args.occasionId === "string" ? args.occasionId : undefined,
-          minPrice: typeof args.minPrice === "number" ? args.minPrice : undefined,
-          maxPrice: typeof args.maxPrice === "number" ? args.maxPrice : undefined,
-          inStockOnly: typeof args.inStockOnly === "boolean" ? args.inStockOnly : undefined,
-          limit: 8,
-        });
+        const clientId = req.headers.get("x-client-id") ?? "";
+        const giftFinderState = getVoiceGiftFinderState(clientId);
+        const input = applyGiftFinderToSearchInput(
+          {
+            query: typeof args.query === "string" ? args.query : undefined,
+            occasionId: typeof args.occasionId === "string" ? args.occasionId : undefined,
+            minPrice: typeof args.minPrice === "number" ? args.minPrice : undefined,
+            maxPrice: typeof args.maxPrice === "number" ? args.maxPrice : undefined,
+            inStockOnly: typeof args.inStockOnly === "boolean" ? args.inStockOnly : undefined,
+          },
+          giftFinderState,
+        );
+        const res = await searchGifts({ ...input, limit: 8 });
         return Response.json({
           ok: true,
           source: res.source,

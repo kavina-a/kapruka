@@ -5,10 +5,12 @@ import { DefaultChatTransport } from "ai";
 import type { FileUIPart } from "ai";
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
+  useState,
   type ReactNode,
 } from "react";
 import { useCommerce } from "@/lib/commerce/store";
@@ -17,15 +19,24 @@ import {
   clearChatSession,
   clearStoredSessionId,
   consumePaymentReturn,
+  getStoredSessionId,
   loadChatSession,
   saveChatSession,
   setStoredSessionId,
+  upsertLocalSessionArchive,
 } from "@/lib/chat/session-persist";
 import {
   ensureServerSession,
+  flushSessionSync,
+  listSessionsForClient,
   loadServerSession,
+  loadSessionById,
   scheduleSessionSync,
+  type SessionSummary,
 } from "@/lib/chat/session-sync";
+import { applyGiftFinderRefinement, extractGiftFinderHintsFromMessages, isGiftFinderUncertainty, type GiftFinderRefinementPatch } from "@/lib/chat/gift-finder";
+import { syncVoiceGiftFinderState } from "@/lib/voice/sync-gift-finder";
+import type { UIMessage } from "ai";
 
 type ChatHelpers = ReturnType<typeof useChat>;
 
@@ -39,6 +50,33 @@ interface ChatContextValue {
   sendWithFiles: (text: string, files: FileUIPart[]) => void;
   /** Start a fresh gift — clears the conversation thread. */
   reset: () => void;
+  /** Active server/local session id. */
+  sessionId: string | null;
+  /** Recent chat sessions for this device. */
+  sessions: SessionSummary[];
+  /** Reload the session list from server/local archive. */
+  refreshSessions: () => void;
+  /** Switch to a past conversation. */
+  switchSession: (sessionId: string) => void;
+}
+
+function seedProcessedToolCalls(
+  messages: UIMessage[],
+  processed: Set<string>,
+): void {
+  for (const msg of messages) {
+    if (msg.role !== "assistant") continue;
+    const parts = (msg as { parts?: Array<Record<string, unknown>> }).parts ?? [];
+    for (const part of parts) {
+      if (
+        (part.type === "tool-addToCart" || part.type === "tool-removeFromCart") &&
+        part.state === "output-available" &&
+        typeof part.toolCallId === "string"
+      ) {
+        processed.add(part.toolCallId);
+      }
+    }
+  }
 }
 
 const ChatCtx = createContext<ChatContextValue | null>(null);
@@ -63,6 +101,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const chatCheckoutStep = useCommerce((s) => s.chatCheckoutStep);
   const activeSet = useCommerce((s) => s.activeSet);
   const savedRecipients = useCommerce((s) => s.savedRecipients);
+  const giftFinderState = useCommerce((s) => s.giftFinderState);
+  const setGiftFinderState = useCommerce((s) => s.setGiftFinderState);
 
   const recipientDislikes = useMemo(() => {
     const map: Record<string, string[]> = {};
@@ -84,12 +124,29 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       recipientDislikes,
       shownProducts: activeSet?.products?.map((p) => ({ id: p.id, name: p.name })),
       clientId,
+      giftFinderState,
     }),
-    [cart, cartSubtotal, delivery, sender, giftMessage, giftMessageSource, chatCheckoutStep, recipientDislikes, activeSet, clientId],
+    [
+      cart,
+      cartSubtotal,
+      delivery,
+      sender,
+      giftMessage,
+      giftMessageSource,
+      chatCheckoutStep,
+      recipientDislikes,
+      activeSet,
+      clientId,
+      giftFinderState,
+    ],
   );
 
   const commerceContextRef = useRef(commerceContext);
   commerceContextRef.current = commerceContext;
+
+  useEffect(() => {
+    void syncVoiceGiftFinderState(clientId, giftFinderState);
+  }, [clientId, giftFinderState]);
   const userProfileRef = useRef(userProfile);
   userProfileRef.current = userProfile;
   const lang = useCommerce((s) => s.lang);
@@ -129,6 +186,49 @@ export function ChatProvider({ children }: { children: ReactNode }) {
    * (localStorage) is never doubled on page reload.
    */
   const processedToolCallsRef = useRef(new Set<string>());
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+
+  const refreshSessions = useCallback(() => {
+    if (!clientId) return;
+    void listSessionsForClient(clientId).then(setSessions);
+  }, [clientId]);
+
+  useEffect(() => {
+    setSessionId(getStoredSessionId());
+    refreshSessions();
+  }, [refreshSessions]);
+
+  const syncContext = useMemo(
+    () => ({
+      clientId,
+      messages: chat.messages,
+      buyerName: userProfile.name,
+      buyerCity: userProfile.city ?? delivery.city,
+      recipientName: delivery.recipientName,
+      recipientCity: delivery.city,
+    }),
+    [
+      clientId,
+      chat.messages,
+      userProfile.name,
+      userProfile.city,
+      delivery.recipientName,
+      delivery.city,
+    ],
+  );
+
+  const applyRestoredMessages = useCallback(
+    (messages: UIMessage[], id: string) => {
+      processedToolCallsRef.current.clear();
+      seedProcessedToolCalls(messages, processedToolCallsRef.current);
+      chat.setMessages(messages);
+      saveChatSession(messages);
+      setStoredSessionId(id);
+      setSessionId(id);
+    },
+    [chat],
+  );
 
   // Restore chat: sessionStorage first (payment return), then Neon (new tab / reload).
   useEffect(() => {
@@ -149,41 +249,33 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
 
       if (messages?.length) {
-        for (const msg of messages) {
-          if (msg.role !== "assistant") continue;
-          const parts = (msg as { parts?: Array<Record<string, unknown>> }).parts ?? [];
-          for (const part of parts) {
-            if (
-              (part.type === "tool-addToCart" || part.type === "tool-removeFromCart") &&
-              part.state === "output-available" &&
-              typeof part.toolCallId === "string"
-            ) {
-              processedToolCallsRef.current.add(part.toolCallId);
-            }
-          }
-        }
+        seedProcessedToolCalls(messages, processedToolCallsRef.current);
         chat.setMessages(messages);
+        const id = getStoredSessionId();
+        if (id) setSessionId(id);
       }
 
       if (paymentRef) {
         sessionStorage.setItem("chatruka-payment-welcome", paymentRef);
       }
+
+      refreshSessions();
     })();
-  }, [chat, clientId]);
+  }, [chat, clientId, refreshSessions]);
 
   // Persist locally (fast) + sync to Neon (durable).
   useEffect(() => {
     if (!chat.messages.length) return;
     saveChatSession(chat.messages);
-    scheduleSessionSync({
-      clientId,
-      messages: chat.messages,
-      buyerName: userProfile.name,
-      buyerCity: userProfile.city ?? delivery.city,
-      recipientName: delivery.recipientName,
-      recipientCity: delivery.city,
-    });
-  }, [chat.messages, clientId, userProfile.name, userProfile.city, delivery.recipientName, delivery.city]);
+    scheduleSessionSync(syncContext);
+  }, [chat.messages, syncContext]);
+
+  // Refresh sidebar list after messages land (debounced with server sync).
+  useEffect(() => {
+    if (!clientId || !chat.messages.length) return;
+    const timer = setTimeout(() => refreshSessions(), 2500);
+    return () => clearTimeout(timer);
+  }, [chat.messages.length, clientId, refreshSessions]);
 
   // Mirror tool outputs into shared client state.
   useEffect(() => {
@@ -277,6 +369,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           }
         }
 
+        // showGiftFinder → open category picker in the thread
+        if (part.type === "tool-showGiftFinder" && toolCallId && !processedToolCallsRef.current.has(toolCallId)) {
+          processedToolCallsRef.current.add(toolCallId);
+          const out = part.output as { ok?: boolean };
+          if (out?.ok) useCommerce.getState().openGiftFinder();
+        }
+
         // addToCart → mirror into the shared basket (MUST be deduplicated — store increments qty)
         if (part.type === "tool-addToCart" && toolCallId && !processedToolCallsRef.current.has(toolCallId)) {
           processedToolCallsRef.current.add(toolCallId);
@@ -299,6 +398,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             removeFromCart(out.productId);
           }
         }
+
+        // refineGiftFinder → Gemini-interpreted tweak patch, merge into the stored gift-finder state
+        if (part.type === "tool-refineGiftFinder" && toolCallId && !processedToolCallsRef.current.has(toolCallId)) {
+          processedToolCallsRef.current.add(toolCallId);
+          const out = part.output as { ok?: boolean; patch?: GiftFinderRefinementPatch };
+          if (out?.ok && out.patch) {
+            const current = useCommerce.getState().giftFinderState;
+            if (current) {
+              useCommerce.getState().setGiftFinderState(applyGiftFinderRefinement(current, out.patch));
+            }
+          }
+        }
       }
     }
     if (latest && latest.id !== lastSyncedRef.current) {
@@ -314,6 +425,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, [chat.messages, setActiveSet, setUserProfile, setDelivery, setSender, setGiftMessage, setChatCheckoutStep, addToCart, removeFromCart, addRecipientDislike]);
 
+  const switchSession = useCallback(
+    (targetId: string) => {
+      if (targetId === sessionId) return;
+      void (async () => {
+        if (chat.messages.length) {
+          await flushSessionSync(syncContext);
+        }
+        const loaded = await loadSessionById(targetId);
+        if (!loaded?.messages.length) return;
+        lastSyncedRef.current = null;
+        applyRestoredMessages(loaded.messages, loaded.sessionId);
+        refreshSessions();
+      })();
+    },
+    [sessionId, chat.messages, syncContext, applyRestoredMessages, refreshSessions],
+  );
+
   const value = useMemo<ChatContextValue>(
     () => ({
       messages: chat.messages,
@@ -323,6 +451,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       sendText: (text: string) => {
         const trimmed = text.trim();
         if (!trimmed) return;
+
+        // If the message contains uncertainty AND a gift/person context, intercept
+        // before sending to the API — surface the structured picker instead.
+        // We allow this even on the very first message ("i want a gift for my mom but idk").
+        const hasUncertainty = isGiftFinderUncertainty(trimmed);
+        const hasGiftContext = /\b(gift|present|something|smt|smth|get|send|buy)\b/i.test(trimmed);
+
+        if (hasUncertainty && (hasGiftContext || chat.messages.length > 0)) {
+          // Extract hints from both the current text and prior messages.
+          const allMessages = chat.messages as UIMessage[];
+          const hints = extractGiftFinderHintsFromMessages(allMessages, trimmed);
+          // Echo the user's text so the conversation thread doesn't jump.
+          const echoMsg: UIMessage = {
+            id: `local-${Date.now()}`,
+            role: "user",
+            parts: [{ type: "text", text: trimmed }],
+          };
+          chat.setMessages([...chat.messages, echoMsg]);
+          useCommerce.getState().setGiftFinderPrefill(hints);
+          useCommerce.getState().openGiftFinder();
+          return;
+        }
         chat.sendMessage({ text: trimmed });
       },
       sendWithFiles: (text: string, files: FileUIPart[]) => {
@@ -334,18 +484,37 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
       },
       reset: () => {
-        chat.setMessages([]);
-        lastSyncedRef.current = null;
-        processedToolCallsRef.current.clear();
-        clearChatSession();
-        clearStoredSessionId();
-        void ensureServerSession(clientId).then((id) => {
+        void (async () => {
+          const currentId = getStoredSessionId();
+          if (chat.messages.length && currentId) {
+            await flushSessionSync(syncContext);
+            upsertLocalSessionArchive({
+              sessionId: currentId,
+              messages: chat.messages,
+              recipientName: delivery.recipientName,
+            });
+          }
+          chat.setMessages([]);
+          lastSyncedRef.current = null;
+          processedToolCallsRef.current.clear();
+          clearChatSession();
+          clearStoredSessionId();
+          setGiftFinderState(null);
+          useCommerce.getState().setGiftFinderPrefill(null);
+          useCommerce.getState().closeGiftFinder();
+          const id = await ensureServerSession(clientId);
           setStoredSessionId(id);
-        });
+          setSessionId(id);
+          refreshSessions();
+        })();
       },
+      sessionId,
+      sessions,
+      refreshSessions,
+      switchSession,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [chat],
+    [chat, sessionId, sessions, refreshSessions, switchSession, syncContext, clientId, delivery.recipientName, setGiftFinderState],
   );
 
   return <ChatCtx.Provider value={value}>{children}</ChatCtx.Provider>;

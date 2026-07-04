@@ -264,6 +264,15 @@ class RukaTools:
             }
         )
 
+    async def show_gift_finder(self, params: FunctionCallParams) -> None:
+        await self._push({"type": "show_gift_finder"})
+        await params.result_callback(
+            {
+                "shown": True,
+                "note": "Category picker is on screen — caller can tap categories and optional budget.",
+            }
+        )
+
     # -- schemas -----------------------------------------------------------
     @property
     def schemas(self) -> list[FunctionSchema]:
@@ -287,6 +296,7 @@ class RukaTools:
                             "romance",
                             "wedding",
                             "mother",
+                            "father",
                             "newborn",
                             "sympathy",
                             "corporate",
@@ -364,5 +374,16 @@ class RukaTools:
                 properties={"order_number": {"type": "string", "description": "The Kapruka order number."}},
                 required=["order_number"],
                 handler=self.track_order,
+            ),
+            FunctionSchema(
+                name="show_gift_finder",
+                description=(
+                    "Show the Kapruka category picker on screen when the caller is stuck — "
+                    "e.g. they say they don't know what to get, no idea, you pick. "
+                    "Do NOT call on the first turn or before they've expressed uncertainty."
+                ),
+                properties={},
+                required=[],
+                handler=self.show_gift_finder,
             ),
         ]

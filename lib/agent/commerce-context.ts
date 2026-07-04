@@ -1,6 +1,11 @@
 import type { CommerceContext } from "@/lib/commerce/types";
 import type { SavedRecipient } from "@/lib/commerce/store";
 import { formatHumanDate } from "@/lib/commerce/dates";
+import { findOccasion } from "@/lib/catalog/occasions";
+import { GIFT_RELATIONSHIPS_BY_ID } from "@/lib/catalog/gift-relationships";
+import { PERSONALITY_TRAITS_BY_ID } from "@/lib/catalog/personality-traits";
+import { budgetTierToPriceRange, giftFinderSearchHints } from "@/lib/chat/gift-finder";
+import { isGiftFinderComplete } from "@/lib/catalog/gift-finder-types";
 
 /** Builds a live snapshot block injected into the system prompt each turn. */
 export function buildCommerceContextBlock(ctx: CommerceContext): string {
@@ -50,6 +55,33 @@ export function buildCommerceContextBlock(ctx: CommerceContext): string {
       .map((p) => `${p.name} (id: ${p.id})`)
       .join("; ");
     lines.push(`- Products on screen (use these exact ids for addToCart): ${ids}`);
+  }
+
+  if (ctx.giftFinderState && isGiftFinderComplete(ctx.giftFinderState)) {
+    const gf = ctx.giftFinderState;
+    const { minPrice, maxPrice } = budgetTierToPriceRange(gf.budgetTier);
+    const { keywords } = giftFinderSearchHints(gf);
+    const rel = gf.relationship ? GIFT_RELATIONSHIPS_BY_ID[gf.relationship]?.label : "unknown";
+    const occ = gf.occasionId ? findOccasion(gf.occasionId)?.label : "not specified";
+    const traits = gf.personalityTraits
+      .map((id) => PERSONALITY_TRAITS_BY_ID[id]?.label ?? id)
+      .join(", ");
+    const budgetText =
+      gf.budgetTier && (minPrice != null || maxPrice != null)
+        ? minPrice && maxPrice
+          ? `LKR ${minPrice.toLocaleString()}–${maxPrice.toLocaleString()}`
+          : maxPrice
+            ? `under LKR ${maxPrice.toLocaleString()}`
+            : minPrice
+              ? `LKR ${minPrice.toLocaleString()}+`
+              : "not set"
+        : "not set (buyer skipped budget)";
+    lines.push(
+      `- Gift finder picks (chip flow complete — curate 4–6 with per-card reasons): ` +
+        `for=${rel}, occasion=${occ}, personality=[${traits}]` +
+        `${gf.exclusions.length ? `, avoid=[${gf.exclusions.join(", ")}]` : ""}, ` +
+        `budget=${budgetText}. Search keywords: [${keywords.join(", ") || "none"}].`,
+    );
   }
 
   return lines.join("\n");

@@ -13,6 +13,7 @@
     "eval:chat:verbose": "tsx eval/run.ts --verbose"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.88",
     "@ai-sdk/openai": "^3.0.71",
     "@ai-sdk/react": "^3.0.208",
     "@modelcontextprotocol/sdk": "^1.29.0",
