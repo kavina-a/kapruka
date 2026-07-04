@@ -2,13 +2,20 @@ import {
   checkDelivery,
   getGift,
   listDeliveryCities,
-  searchGifts,
   trackOrder,
   KaprukaError,
 } from "@/lib/mcp/kapruka";
 import { toCard } from "@/lib/catalog/seed";
 import { applyGiftFinderToSearchInput } from "@/lib/agent/apply-gift-finder-search";
+import { searchGiftsWithRecipientContext } from "@/lib/agent/enrich-search";
 import { getVoiceGiftFinderState } from "@/lib/voice/gift-finder-context";
+import {
+  agentLog,
+  newTraceId,
+  runWithAgentTraceAsync,
+  summarizeProducts,
+  summarizeSearchInput,
+} from "@/lib/agent/log";
 
 export const runtime = "nodejs";
 
@@ -40,40 +47,63 @@ export async function POST(req: Request) {
     return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { tool?: string; args?: Record<string, unknown> };
-  try {
-    body = await req.json();
-  } catch {
-    return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
-  }
+  const traceId = req.headers.get("x-trace-id") ?? newTraceId("voice");
+  const clientId = req.headers.get("x-client-id") ?? undefined;
 
-  const tool = body.tool;
-  const args = body.args ?? {};
+  return runWithAgentTraceAsync({ traceId, channel: "voice", clientId }, async () => {
+    let body: { tool?: string; args?: Record<string, unknown> };
+    try {
+      body = await req.json();
+    } catch {
+      return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    }
 
-  try {
-    switch (tool) {
-      case "search_gifts": {
-        const clientId = req.headers.get("x-client-id") ?? "";
-        const giftFinderState = getVoiceGiftFinderState(clientId);
-        const input = applyGiftFinderToSearchInput(
-          {
-            query: typeof args.query === "string" ? args.query : undefined,
-            occasionId: typeof args.occasionId === "string" ? args.occasionId : undefined,
-            minPrice: typeof args.minPrice === "number" ? args.minPrice : undefined,
-            maxPrice: typeof args.maxPrice === "number" ? args.maxPrice : undefined,
-            inStockOnly: typeof args.inStockOnly === "boolean" ? args.inStockOnly : undefined,
-          },
-          giftFinderState,
-        );
-        const res = await searchGifts({ ...input, limit: 8 });
-        return Response.json({
-          ok: true,
-          source: res.source,
-          occasion: res.occasion,
-          note: res.note,
-          products: res.products,
-        });
-      }
+    const tool = body.tool;
+    const args = body.args ?? {};
+
+    agentLog("voice.tool.call", { tool, args });
+
+    try {
+      switch (tool) {
+        case "search_gifts": {
+          const giftFinderState = getVoiceGiftFinderState(clientId ?? "");
+          const input = applyGiftFinderToSearchInput(
+            {
+              query: typeof args.query === "string" ? args.query : undefined,
+              occasionId: typeof args.occasionId === "string" ? args.occasionId : undefined,
+              minPrice: typeof args.minPrice === "number" ? args.minPrice : undefined,
+              maxPrice: typeof args.maxPrice === "number" ? args.maxPrice : undefined,
+              inStockOnly: typeof args.inStockOnly === "boolean" ? args.inStockOnly : undefined,
+            },
+            giftFinderState,
+          );
+          agentLog("voice.search.input", {
+            effective: summarizeSearchInput(input as Record<string, unknown>),
+            giftFinderActive: Boolean(giftFinderState),
+          });
+          const res = await searchGiftsWithRecipientContext({
+            input,
+            limit: 8,
+            recipientContext: {
+              giftFinderState,
+              shopperNote: typeof args.shopperNote === "string" ? args.shopperNote : undefined,
+            },
+          });
+          agentLog("voice.search.result", {
+            source: res.source,
+            matchQuality: res.matchQuality,
+            searchedFor: res.searchedFor,
+            count: res.products.length,
+            products: summarizeProducts(res.products),
+          });
+          return Response.json({
+            ok: true,
+            source: res.source,
+            occasion: res.occasion,
+            note: res.note,
+            products: res.products,
+          });
+        }
 
       case "get_gift_details": {
         const productId = String(args.productId ?? "");
@@ -105,7 +135,9 @@ export async function POST(req: Request) {
       default:
         return Response.json({ ok: false, error: `Unknown tool: ${tool}` }, { status: 400 });
     }
-  } catch (err) {
-    return Response.json(errorBody(err), { status: 200 });
-  }
+    } catch (err) {
+      agentLog("voice.tool.error", { tool, error: err instanceof Error ? err.message : String(err) }, "error");
+      return Response.json(errorBody(err), { status: 200 });
+    }
+  });
 }

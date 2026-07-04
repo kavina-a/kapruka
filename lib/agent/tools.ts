@@ -19,8 +19,14 @@ import type { AgentMode } from "@/lib/agent/modes";
 import type { GiftFinderState } from "@/lib/catalog/gift-finder-types";
 import { interpretRefinement, isGeminiConfigured } from "@/lib/agent/classify";
 import { applyGiftFinderToSearchInput } from "@/lib/agent/apply-gift-finder-search";
+import { searchGiftsWithRecipientContext } from "@/lib/agent/enrich-search";
 import { curateGiftPicks } from "@/lib/agent/curate-picks";
 import { isGiftFinderComplete } from "@/lib/catalog/gift-finder-types";
+import {
+  agentLog,
+  summarizeSearchInput,
+  summarizeToolResult,
+} from "@/lib/agent/log";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
@@ -146,17 +152,30 @@ function makeSearchGiftsTool(giftFinderState?: GiftFinderState | null) {
       "  Do NOT just pass occasionId:'father' and hope. Think: what do people actually buy for this?\n" +
       "  'Father's Day gift' → dads: chocolates, cologne, hampers → pick occasionId:'chocolates' (or 'perfumes' or 'fruit')\n" +
       "  'something for grandma' → flowers or chocolates → occasionId:'flowers'\n" +
-      "  'anniversary, no idea' → flowers or jewellery → occasionId:'flowers'\n" +
+      "  'anniversary, no product hint' → occasionId:'flowers' or 'jewellery' — NOT 'anniversary' (Kapruka's anniversary category is mostly cakes)\n" +
       "  'birthday for a friend, no hint' → occasionId:'birthday' (Kapruka has this and it works well)\n" +
-      "  Kapruka occasions with DEDICATED categories (use these directly): birthday, anniversary, wedding, mother, corporate, romance, sympathy, newborn\n" +
+      "  Kapruka occasions with DEDICATED categories (use these directly): birthday, wedding, mother, corporate, romance, sympathy, newborn\n" +
+      "  ⚠️ 'anniversary' category → returns mostly cakes — prefer occasionId:'flowers' or 'jewellery' unless the buyer specifically wants cake\n" +
       "  For all others: infer the likely product type yourself, then search that vertical.\n\n" +
       "RULE C — both known → product vertical wins:\n" +
       "  'jewellery for mum's birthday' → occasionId:'jewellery', not 'birthday'\n\n" +
       "NEVER put recipient words (dad, mum, brother, friend) in `query` — it breaks the search engine.\n" +
       "ALWAYS put who it's for in shopperNote.\n\n" +
+      "REJECTION RULE (critical): If the user just rejected the results ('not cake', 'no flowers', 'avoid X'):\n" +
+      "  1. Call rememberRecipientDislike first.\n" +
+      "  2. Switch to a COMPLETELY DIFFERENT occasionId — NEVER repeat the same occasionId you just used.\n" +
+      "  3. MCP results are cached for 30 minutes — retrying the same search returns IDENTICAL products.\n" +
+      "  Cake rejected → try occasionId:'flowers' or 'jewellery' or 'perfumes'\n" +
+      "  Flowers rejected → try occasionId:'chocolates' or 'jewellery' or 'perfumes'\n" +
+      "  Chocolates rejected → try occasionId:'flowers' or 'jewellery' or 'fruit'\n\n" +
       "CATEGORY ANCHORING (critical — omitting this causes garbage results):\n" +
       "  any flower variety → occasionId:'flowers' | any cake type → occasionId:'cakes'\n" +
       "  any chocolate → occasionId:'chocolates' | any fragrance/cologne → occasionId:'perfumes'\n\n" +
+      "QUERY TIPS (Kapruka search quirks):\n" +
+      "  flowers: use singular product term in query — 'rose' not 'roses', 'lily' not 'lilies'\n" +
+      "  cakes: use specific type — 'chocolate cake', 'ribbon cake', 'cupcake' (not just 'cake')\n" +
+      "  sympathy: query 'sympathy flowers' or 'condolence' — occasionId:'sympathy'\n" +
+      "  alternative queries: supply alternativeQueries for niche items — e.g. ['rose bouquet','red rose'] for rose searches\n\n" +
       "ALTERNATIVES: matchQuality 'related' → max 3 cards, positive shopperNote, ONE question after.\n" +
       "POST-CART: one complement offer BEFORE checkout. Never 'Shall we proceed?'" +
       finderHint,
@@ -191,13 +210,30 @@ function makeSearchGiftsTool(giftFinderState?: GiftFinderState | null) {
         .optional(),
     }),
     execute: async ({ shopperNote, ...input }) => {
+      agentLog("tool.call", {
+        tool: "searchGifts",
+        args: summarizeSearchInput({ ...input, shopperNote }),
+        giftFinderActive: finderActive,
+      });
       try {
         // Chip-selected budget/traits are structured ground truth — enforce the
         // budget deterministically (no LLM guesswork) and only fill gaps the
         // model left blank, never override what it explicitly chose.
         const effectiveInput = applyGiftFinderToSearchInput(input, giftFinderState);
 
-        const res = await searchGifts({ ...effectiveInput, limit: finderActive ? 12 : 8 });
+        agentLog("tool.search_effective_input", {
+          tool: "searchGifts",
+          effective: summarizeSearchInput(effectiveInput as Record<string, unknown>),
+        }, "debug");
+
+        const res = await searchGiftsWithRecipientContext({
+          input: effectiveInput,
+          limit: finderActive ? 12 : 8,
+          recipientContext: {
+            shopperNote,
+            giftFinderState,
+          },
+        });
         const isSubstitution = res.matchQuality === "related";
         const productLimit = isSubstitution ? 3 : finderActive ? 12 : 8;
         const note = shopperNote?.trim() || res.note;
@@ -213,7 +249,7 @@ function makeSearchGiftsTool(giftFinderState?: GiftFinderState | null) {
           products = products.slice(0, isSubstitution ? 3 : 8);
         }
 
-        return {
+        const payload = {
           ok: true as const,
           source: res.source,
           occasion: res.occasion,
@@ -224,8 +260,12 @@ function makeSearchGiftsTool(giftFinderState?: GiftFinderState | null) {
           count: products.length,
           products,
         };
+        agentLog("tool.result", summarizeToolResult("searchGifts", payload));
+        return payload;
       } catch (err) {
-        return errorPayload(err);
+        const errPayload = errorPayload(err);
+        agentLog("tool.error", { tool: "searchGifts", ...errPayload }, "error");
+        return errPayload;
       }
     },
   });
@@ -311,7 +351,12 @@ export const rukaTools = {
 
   checkDelivery: tool({
     description:
-      "Check real delivery availability, the flat LKR delivery fee, and any perishable warning for a city + date. Always do this before promising delivery. City must be an exact Kapruka zone (e.g. 'Colombo 03', not 'Colombo') — run findDeliveryCities first if unsure.",
+      "Check real delivery availability, the flat LKR delivery fee, and any perishable warning for a specific city + date. " +
+      "Call ONCE per query. If the buyer asks 'how long does delivery take' or a general timeframe question — answer from knowledge first " +
+      "(Kapruka delivers same-day for orders placed before ~11 AM Sri Lanka time, otherwise next-day in Colombo; " +
+      "2–3 days for outstations) then call this to confirm a specific date. " +
+      "Only call twice when the first date fails AND you want to suggest the next available day — otherwise one call is enough. " +
+      "City must be an exact Kapruka zone (e.g. 'Colombo 03') — run findDeliveryCities first if unsure.",
     inputSchema: z.object({
       city: z
         .string()
@@ -419,10 +464,16 @@ export const rukaTools = {
 
   showGiftFinder: tool({
     description:
-      "Show the structured gift finder (relationship → personality → budget) when the buyer is stuck — " +
-      "e.g. 'idk', 'I don't know', 'no idea', 'you pick'. Do NOT call searchGifts in the same turn. " +
-      "Do NOT call on the first message. After calling, say one warm line like 'No worries — " +
-      "pick a few things about them and I'll pull curated ideas.' Never search before they finish the chips.",
+      "Show the structured gift finder (relationship → personality → budget) when the buyer has no idea what to get — whether or not a recipient/occasion is already known. " +
+      "Trigger signals: 'idk', 'I don't know', 'no idea', 'nothing in mind', 'nothing specific', 'not sure what to get', " +
+      "'you pick', 'you decide', 'surprise me', 'open to anything', 'dunno', 'whatever you think', 'recommend something', 'suggest something'. " +
+      "Rules: (1) Do NOT call searchGifts in the same turn as this. " +
+      "(2) It IS fine to call this on the very first user message IF that message already has zero recipient/occasion/product context " +
+      "(e.g. 'I need a gift for someone but I have no idea what, surprise me') OR if the message names a recipient but ALSO already expresses uncertainty in the same breath (e.g. 'something for my sister, no idea what she'd like'). " +
+      "(3) If a recipient/occasion is named WITHOUT any uncertainty language (e.g. plain 'something for my dad'), do NOT call this yet — the correct first move is ONE clarifying question ('Do you have something in mind for him, or would you like me to suggest a few things?'), with no tool call at all. Only call showGiftFinder on their NEXT reply if that reply is uncertain ('I don't know', 'you pick', 'recommend something'). If their reply instead gives a taste/product hint, call searchGifts for that instead. " +
+      "(4) Only call ONCE per session — if you already called it and the buyer is STILL unsure afterward, call searchGifts with a fresh occasionId instead; do not re-open the picker. " +
+      "After calling, say one warm line only — e.g. 'No worries — pick a few things about them and I'll pull curated ideas.' " +
+      "Never search before they finish the picker chips.",
     inputSchema: z.object({}),
     execute: async () => ({ ok: true as const }),
   }),
@@ -445,7 +496,7 @@ export const rukaTools = {
 
   rememberRecipientDislike: tool({
     description:
-      "When the buyer says a recipient does NOT want something — 'Dad already has six tea sets', 'She hates perfume', 'Don't suggest electronics for Amali' — call this silently to persist that dislike to the recipient's profile. The UI will ensure future recommendations avoid it. Do NOT mention this call.",
+      "When the buyer says a recipient does NOT want something — 'Dad already has six tea sets', 'She hates perfume', 'Don't suggest electronics for Amali', 'not cake', 'they have sugar issues' — call this silently to persist the dislike. Do NOT mention this call. IMMEDIATELY follow with a searchGifts call using a DIFFERENT occasionId than the one you just used — do not repeat the same category.",
     inputSchema: z.object({
       recipientName: z.string().describe("The recipient's name, e.g. 'Dad' or 'Amali'."),
       dislike: z
@@ -454,7 +505,12 @@ export const rukaTools = {
           "Short description of what to avoid, e.g. 'tea sets', 'perfume', 'electronics'.",
         ),
     }),
-    execute: async (input) => ({ ok: true as const, ...input }),
+    execute: async (input) => {
+      agentLog("tool.call", { tool: "rememberRecipientDislike", args: input });
+      const out = { ok: true as const, ...input };
+      agentLog("tool.result", summarizeToolResult("rememberRecipientDislike", out));
+      return out;
+    },
   }),
 
   optimizeBudget: tool({

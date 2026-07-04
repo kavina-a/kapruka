@@ -34,7 +34,9 @@ import {
   scheduleSessionSync,
   type SessionSummary,
 } from "@/lib/chat/session-sync";
-import { applyGiftFinderRefinement, extractGiftFinderHintsFromMessages, isGiftFinderUncertainty, type GiftFinderRefinementPatch } from "@/lib/chat/gift-finder";
+import { applyGiftFinderRefinement, buildGiftFinderMessage, extractGiftFinderHintsFromMessages, isGiftFinderUncertainty, type GiftFinderRefinementPatch } from "@/lib/chat/gift-finder";
+import { isGiftFinderComplete } from "@/lib/catalog/gift-finder-types";
+import type { GiftFinderState } from "@/lib/catalog/gift-finder-types";
 import { syncVoiceGiftFinderState } from "@/lib/voice/sync-gift-finder";
 import type { UIMessage } from "ai";
 
@@ -48,6 +50,8 @@ interface ChatContextValue {
   sendText: (text: string) => void;
   /** Send a message that may include image files for vision / reverse search. */
   sendWithFiles: (text: string, files: FileUIPart[]) => void;
+  /** Submit completed gift-finder chips — sends context to the API without a visible user bubble. */
+  submitGiftFinderPicks: (state: GiftFinderState) => void;
   /** Start a fresh gift — clears the conversation thread. */
   reset: () => void;
   /** Active server/local session id. */
@@ -373,7 +377,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (part.type === "tool-showGiftFinder" && toolCallId && !processedToolCallsRef.current.has(toolCallId)) {
           processedToolCallsRef.current.add(toolCallId);
           const out = part.output as { ok?: boolean };
-          if (out?.ok) useCommerce.getState().openGiftFinder();
+          if (out?.ok) {
+            const hints = extractGiftFinderHintsFromMessages(chat.messages as UIMessage[]);
+            useCommerce.getState().setGiftFinderPrefill(hints);
+            useCommerce.getState().openGiftFinder();
+          }
         }
 
         // addToCart → mirror into the shared basket (MUST be deduplicated — store increments qty)
@@ -455,10 +463,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         // If the message contains uncertainty AND a gift/person context, intercept
         // before sending to the API — surface the structured picker instead.
         // We allow this even on the very first message ("i want a gift for my mom but idk").
+        // Do NOT re-open the picker once the gift finder has been completed —
+        // at that point the LLM should pivot to a fresh search instead.
         const hasUncertainty = isGiftFinderUncertainty(trimmed);
         const hasGiftContext = /\b(gift|present|something|smt|smth|get|send|buy)\b/i.test(trimmed);
+        const giftFinderAlreadyDone = isGiftFinderComplete(useCommerce.getState().giftFinderState);
 
-        if (hasUncertainty && (hasGiftContext || chat.messages.length > 0)) {
+        if (hasUncertainty && !giftFinderAlreadyDone && (hasGiftContext || chat.messages.length > 0)) {
           // Extract hints from both the current text and prior messages.
           const allMessages = chat.messages as UIMessage[];
           const hints = extractGiftFinderHintsFromMessages(allMessages, trimmed);
@@ -474,6 +485,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           return;
         }
         chat.sendMessage({ text: trimmed });
+      },
+      submitGiftFinderPicks: (state: GiftFinderState) => {
+        setGiftFinderState(state);
+        useCommerce.getState().setGiftFinderPrefill(null);
+        useCommerce.getState().closeGiftFinder();
+
+        // API body reads this ref — update synchronously so searchGifts sees chip state.
+        commerceContextRef.current = {
+          ...commerceContextRef.current,
+          giftFinderState: state,
+        };
+
+        const text = buildGiftFinderMessage(state);
+        chat.sendMessage({
+          text,
+          metadata: { hidden: true, giftFinderSubmit: true },
+        } as Parameters<typeof chat.sendMessage>[0]);
       },
       sendWithFiles: (text: string, files: FileUIPart[]) => {
         if (!text.trim() && !files.length) return;

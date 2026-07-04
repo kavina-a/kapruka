@@ -26,7 +26,9 @@ import {
   relevanceScore,
   sanitizeProductQuery,
 } from "@/lib/catalog/search-expand";
+import { filterOffSeasonProducts } from "@/lib/catalog/seasonal-filter";
 import { matchDeliveryCity, normalizeCityInput, type CityResolveResult } from "@/lib/mcp/city-match";
+import { agentLog, summarizeProducts, summarizeSearchInput } from "@/lib/agent/log";
 import type {
   DeliveryCity,
   DeliveryQuote,
@@ -115,16 +117,34 @@ function buildAttempts(input: SearchGiftsInput, occasion: Occasion | null, produ
 async function runLiveAttempts(
   attempts: SearchAttempt[],
   input: SearchGiftsInput,
+  label = "primary",
 ): Promise<{ products: Product[]; transportFailed: boolean }> {
   let transportFailed = false;
+  agentLog("search.attempts", { label, attempts }, "debug");
   for (const attempt of attempts) {
     try {
       const res = await liveSearch(attempt, input);
-      if (res?.results?.length) {
-        return { products: res.results.map((r) => toProduct(r, [])), transportFailed: false };
+      const count = res?.results?.length ?? 0;
+      agentLog(
+        "search.attempt",
+        { label, q: attempt.q, category: attempt.category ?? null, resultCount: count },
+        count ? "info" : "debug",
+      );
+      if (count) {
+        return { products: res!.results.map((r) => toProduct(r, [])), transportFailed: false };
       }
-    } catch {
+    } catch (err) {
       transportFailed = true;
+      agentLog(
+        "search.attempt_error",
+        {
+          label,
+          q: attempt.q,
+          category: attempt.category ?? null,
+          error: err instanceof Error ? err.message : String(err),
+        },
+        "warn",
+      );
       break;
     }
   }
@@ -165,6 +185,19 @@ async function liveSearch(
  * occasion/category for reliability), then falls back to the verified seed
  * catalog so the experience never dead-ends.
  */
+function logSearchComplete(result: SearchGiftsResult, phase: string): SearchGiftsResult {
+  agentLog("search.complete", {
+    phase,
+    source: result.source,
+    matchQuality: result.matchQuality,
+    searchedFor: result.searchedFor,
+    count: result.products.length,
+    note: result.note,
+    products: summarizeProducts(result.products),
+  });
+  return result;
+}
+
 export async function searchGifts(input: SearchGiftsInput): Promise<SearchGiftsResult> {
   const { productQuery, recipientHints } = sanitizeProductQuery(input.query);
   const effectiveQuery = productQuery.trim();
@@ -177,11 +210,22 @@ export async function searchGifts(input: SearchGiftsInput): Promise<SearchGiftsR
   const occTags = occasion ? [occasion.id] : [];
   const limit = input.limit ?? 8;
 
+  agentLog("search.start", {
+    input: summarizeSearchInput(searchInput as Record<string, unknown>),
+    effectiveQuery: effectiveQuery || null,
+    recipientHints,
+    occasion: occasionMeta,
+    limit,
+  });
+
   const primaryAttempts = buildAttempts(searchInput, occasion, effectiveQuery);
-  let { products, transportFailed } = await runLiveAttempts(primaryAttempts, searchInput);
+  let { products, transportFailed } = await runLiveAttempts(primaryAttempts, searchInput, "primary");
 
   if (products.length) {
-    products = products.map((p) => ({ ...p, occasions: [...new Set([...(p.occasions ?? []), ...occTags])] }));
+    products = filterOffSeasonProducts(products).map((p) => ({
+      ...p,
+      occasions: [...new Set([...(p.occasions ?? []), ...occTags])],
+    }));
   }
 
   const primaryRelevance = effectiveQuery ? relevanceScore(products, effectiveQuery) : 1;
@@ -196,9 +240,21 @@ export async function searchGifts(input: SearchGiftsInput): Promise<SearchGiftsR
   // Kapruka MCP category, retry with the fallback product verticals defined
   // on the occasion itself. This surfaces chocolates, perfumes, etc. when a
   // specific product interest is unknown but the recipient type is known.
+  //
+  // We deliberately DON'T stop at the first category with results — a buyer
+  // who only said "something for my dad" should see a spread across a few
+  // verticals (chocolates + perfumes + a hamper), not eight chocolate boxes.
+  // Only when the buyer named a specific product (effectiveQuery set) do we
+  // stay narrow, since then diversity would dilute an otherwise exact match.
   if (!products.length && occasion?.fallbackOccasionIds?.length) {
     const occasionQuery = occasion.query;
+    const usedCategories: string[] = [];
+    let collected: Product[] = [];
+    const wantsVariety = !effectiveQuery;
+    const perCategoryCap = wantsVariety ? Math.max(2, Math.ceil(limit / 3)) : limit;
+
     for (const fallbackId of occasion.fallbackOccasionIds) {
+      if (collected.length >= limit) break;
       const fallbackOcc = findOccasion(fallbackId);
       if (!fallbackOcc) continue;
       // Use the product query if we have one, otherwise the occasion's own query term
@@ -206,16 +262,29 @@ export async function searchGifts(input: SearchGiftsInput): Promise<SearchGiftsR
       const res = await runLiveAttempts(
         [{ q, category: fallbackOcc.mcpCategory }, { q: fallbackOcc.query, category: fallbackOcc.mcpCategory }],
         input,
+        `fallback:${fallbackId}`,
       );
       if (res.products.length) {
-        products = res.products.map((p) => ({
-          ...p,
-          occasions: [...new Set([...(p.occasions ?? []), occasion.id])],
-        }));
-        matchQuality = "category";
-        searchedFor = effectiveQuery || fallbackOcc.label;
-        break;
+        const seasonSafe = filterOffSeasonProducts(res.products);
+        const slice = wantsVariety ? seasonSafe.slice(0, perCategoryCap) : seasonSafe;
+        collected = mergeProducts(
+          collected,
+          slice.map((p) => ({ ...p, occasions: [...new Set([...(p.occasions ?? []), occasion.id])] })),
+          limit,
+        );
+        usedCategories.push(fallbackId);
+        if (!wantsVariety) break;
       }
+    }
+
+    if (collected.length) {
+      products = collected;
+      matchQuality = "category";
+      searchedFor =
+        effectiveQuery ||
+        (usedCategories.length > 1
+          ? `${occasion.label} favourites`
+          : (findOccasion(usedCategories[0])?.label ?? occasion.label));
     }
   }
 
@@ -224,10 +293,10 @@ export async function searchGifts(input: SearchGiftsInput): Promise<SearchGiftsR
     for (const altQuery of relatedQueries) {
       if (altQuery.toLowerCase() === effectiveQuery.toLowerCase()) continue;
       const altAttempts = buildAttempts({ ...searchInput, query: altQuery }, occasion, altQuery);
-      const alt = await runLiveAttempts(altAttempts, { ...searchInput, query: altQuery });
+      const alt = await runLiveAttempts(altAttempts, { ...searchInput, query: altQuery }, `expand:${altQuery}`);
       if (alt.transportFailed) transportFailed = true;
       if (alt.products.length) {
-        const tagged = alt.products.map((p) => ({
+        const tagged = filterOffSeasonProducts(alt.products).map((p) => ({
           ...p,
           occasions: [...new Set([...(p.occasions ?? []), ...occTags])],
         }));
@@ -257,13 +326,16 @@ export async function searchGifts(input: SearchGiftsInput): Promise<SearchGiftsR
   }
 
   if (products.length) {
-    return {
-      products: products.slice(0, limit),
-      source: "live",
-      occasion: occasionMeta,
-      matchQuality,
-      searchedFor,
-    };
+    return logSearchComplete(
+      {
+        products: products.slice(0, limit),
+        source: "live",
+        occasion: occasionMeta,
+        matchQuality,
+        searchedFor,
+      },
+      "live",
+    );
   }
 
   const seed = searchSeed({
@@ -299,29 +371,37 @@ export async function searchGifts(input: SearchGiftsInput): Promise<SearchGiftsR
     });
   }
 
+  seedProducts = filterOffSeasonProducts(seedProducts);
+
   if (seedProducts.length) {
     const varietyLabel = effectiveQuery || input.query || "";
-    return {
-      products: seedProducts,
-      source: "seed",
-      occasion: occasionMeta,
-      matchQuality: effectiveQuery ? "related" : "category",
-      searchedFor: effectiveQuery || occasion?.label || "favourites",
-      note: transportFailed
-        ? "Live search was unavailable — here are some hand-picked options from our catalogue."
-        : varietyLabel
-          ? `We couldn't find an exact match for "${varietyLabel}" — here are the closest alternatives.`
-          : "Here are some hand-picked options from our catalogue.",
-    };
+    return logSearchComplete(
+      {
+        products: seedProducts,
+        source: "seed",
+        occasion: occasionMeta,
+        matchQuality: effectiveQuery ? "related" : "category",
+        searchedFor: effectiveQuery || occasion?.label || "favourites",
+        note: transportFailed
+          ? "Live search was unavailable — here are some hand-picked options from our catalogue."
+          : varietyLabel
+            ? `We couldn't find an exact match for "${varietyLabel}" — here are the closest alternatives.`
+            : "Here are some hand-picked options from our catalogue.",
+      },
+      "seed",
+    );
   }
 
-  return {
-    products: [],
-    source: transportFailed ? "live" : "seed",
-    occasion: occasionMeta,
-    searchedFor: effectiveQuery,
-    note: "I couldn't find a match for that just now.",
-  };
+  return logSearchComplete(
+    {
+      products: [],
+      source: transportFailed ? "live" : "seed",
+      occasion: occasionMeta,
+      searchedFor: effectiveQuery,
+      note: "I couldn't find a match for that just now.",
+    },
+    "empty",
+  );
 }
 
 /** Full product details — live, with seed fallback. */

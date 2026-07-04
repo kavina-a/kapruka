@@ -27,6 +27,7 @@ const CONNECTING_STATES = ["authenticating", "authorizing", "connecting", "initi
 export function VoiceComposer() {
   const voiceOpen = useCommerce((s) => s.voiceOpen);
   const closeVoice = useCommerce((s) => s.closeVoice);
+  const lang = useCommerce((s) => s.lang);
 
   const client = usePipecatClient();
   const transportState = usePipecatClientTransportState();
@@ -53,14 +54,14 @@ export function VoiceComposer() {
     setError(null);
     setStarting(true);
     try {
-      await connectVoice(client);
+      await connectVoice(client, lang);
     } catch (err) {
       setError("Couldn't reach the voice line. Tap to try again.");
       console.error("Voice connect failed:", err);
     } finally {
       setStarting(false);
     }
-  }, [client]);
+  }, [client, lang]);
 
   // Auto-connect when voice opens and we haven't connected yet.
   useEffect(() => {

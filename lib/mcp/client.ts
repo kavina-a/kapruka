@@ -1,6 +1,7 @@
 import "server-only";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { agentLog } from "@/lib/agent/log";
 
 const MCP_URL = process.env.KAPRUKA_MCP_URL ?? "https://mcp.kapruka.com/mcp";
 
@@ -118,11 +119,19 @@ export async function callToolText(
 
   if (ttlMs > 0) {
     const cached = getCached(key);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) {
+      agentLog(
+        "mcp.cache_hit",
+        { tool: name, params: summarizeMcpParams(params) },
+        "debug",
+      );
+      return cached;
+    }
   }
 
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    const started = Date.now();
     try {
       const client = await getClient();
       const res = await client.callTool({ name, arguments: { params } });
@@ -131,9 +140,28 @@ export async function callToolText(
         throw new KaprukaTransportError(`Unexpected MCP response from ${name}`);
       }
       if (ttlMs > 0) setCached(key, text, ttlMs);
+      agentLog("mcp.call_ok", {
+        tool: name,
+        params: summarizeMcpParams(params),
+        ms: Date.now() - started,
+        attempt,
+        cached: ttlMs > 0,
+        preview: text.slice(0, 120),
+      });
       return text;
     } catch (err) {
       lastErr = err;
+      agentLog(
+        "mcp.call_fail",
+        {
+          tool: name,
+          params: summarizeMcpParams(params),
+          ms: Date.now() - started,
+          attempt,
+          error: err instanceof Error ? err.message : String(err),
+        },
+        attempt < retries ? "warn" : "error",
+      );
       // Connection may be stale; force a fresh handshake next attempt.
       resetClient();
       if (attempt < retries) {
@@ -176,6 +204,11 @@ export async function callToolJson<T>(
   } catch {
     throw new KaprukaTransportError(`Could not parse JSON from ${name}.`);
   }
+}
+
+function summarizeMcpParams(params: Record<string, unknown>): Record<string, unknown> {
+  const { response_format: _rf, ...rest } = params;
+  return rest;
 }
 
 export { MCP_URL };

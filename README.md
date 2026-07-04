@@ -14,8 +14,8 @@ Ruka is the spirit of the _Kapruka_ — Sri Lanka's mythical wish-granting tree 
 - **Multi-item cart** — quantity edits, removal, running subtotal, per-cake icing message, persisted across reloads.
 - **Real, deterministic checkout** — a verifiable state machine: re-validate stock/price → capture delivery (with **live city autocomplete** and a **real delivery-fee quote**) → confirm-before-charge → `create_order` → **real Kapruka pay link** → confirmation.
 - **Order tracking** — look up any Kapruka order number for a live status timeline.
-- **Language** — Ruka mirrors English, **Sinhala, or Tanglish**.
-- **Real-time voice ("Call Ruka")** — a full speech-to-speech mode powered by **Pipecat + Google Gemini Live**. Talk to Ruka in English, Sinhala, or Tanglish; as you speak, the same product cards, cart, and checkout render on screen. Voice and text share one brain (persona, catalogue, cart, checkout). See [`voice/`](voice/README.md).
+- **Language** — Ruka mirrors English, **Sinhala, Tamil, or Tanglish**.
+- **Real-time voice ("Call Ruka")** — a full speech-to-speech mode powered by **Pipecat + Google Gemini Live**. Talk to Ruka in English, Sinhala, Tamil, or Tanglish; language auto-detects and switches mid-call with one consistent voice. Product cards, cart, and checkout render on screen. See [`pipecat-server/`](pipecat-server/README.md).
 
 ## Why it's built this way (headline decisions)
 

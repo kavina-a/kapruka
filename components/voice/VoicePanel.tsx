@@ -34,6 +34,7 @@ function partToText(text: unknown): string {
 export function VoicePanel() {
   const voiceOpen = useCommerce((s) => s.voiceOpen);
   const closeVoice = useCommerce((s) => s.closeVoice);
+  const lang = useCommerce((s) => s.lang);
   const activeSet = useCommerce((s) => s.activeSet);
 
   const client = usePipecatClient();
@@ -64,7 +65,7 @@ export function VoicePanel() {
     setError(null);
     setStarting(true);
     try {
-      await connectVoice(client);
+      await connectVoice(client, lang);
     } catch (err) {
       setError(
         "I couldn't reach the voice line. Make sure the voice service is running, then try again.",
@@ -73,7 +74,7 @@ export function VoicePanel() {
     } finally {
       setStarting(false);
     }
-  }, [client]);
+  }, [client, lang]);
 
   const hangUp = useCallback(async () => {
     try {
@@ -133,7 +134,7 @@ export function VoicePanel() {
               <BrandMascot variant="call" size={34} />
               <div className="leading-tight">
                 <div className="font-display text-base text-ink">Calling ChatRuka</div>
-                <div className="text-[11px] text-ink-faint">Live voice · English · Sinhala · Tanglish</div>
+                <div className="text-[11px] text-ink-faint">Live voice · English · Sinhala · Tamil · Tanglish</div>
               </div>
             </div>
             <button

@@ -31,6 +31,15 @@ function isVoiceServerMessage(value: unknown): value is VoiceServerMessage {
       return isRecord(value.order);
     case "show_gift_finder":
       return true;
+    case "language":
+      return (
+        value.language === "en" ||
+        value.language === "si" ||
+        value.language === "ta" ||
+        value.language === "tanglish"
+      );
+    case "end_call":
+      return true;
     default:
       return false;
   }

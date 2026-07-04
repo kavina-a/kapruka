@@ -93,6 +93,24 @@ export function gradeResponse(
     });
   }
 
+  if (expect.tool_params_not_contain) {
+    const candidateTools = expect.tool_called
+      ? [expect.tool_called]
+      : (expect.tool_called_any ?? []);
+    const matchedTool = candidateTools.find((name) => toolInputs[name]);
+    const input = matchedTool ? (toolInputs[matchedTool] ?? {}) : {};
+    const violations = Object.entries(expect.tool_params_not_contain).filter(
+      ([key, val]) => input[key] === val,
+    );
+    checks.push({
+      name: "tool_params_not_contain",
+      pass: violations.length === 0,
+      detail: violations.length === 0
+        ? "✓ No forbidden tool params found"
+        : `✗ Forbidden param(s) found: ${JSON.stringify(Object.fromEntries(violations))} in ${JSON.stringify(input)}`,
+    });
+  }
+
   if (expect.must_contain_cross_sell && expect.cross_sell_signals) {
     const found = expect.cross_sell_signals.find((s) =>
       lower.includes(s.toLowerCase()),

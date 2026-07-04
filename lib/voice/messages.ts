@@ -57,6 +57,20 @@ export interface VoiceShowGiftFinderMessage {
   type: "show_gift_finder";
 }
 
+/** Active spoken language / TTS voice for the live call. */
+export interface VoiceLanguageMessage {
+  type: "language";
+  language: "en" | "si" | "ta" | "tanglish";
+  tts_language?: string;
+  voice?: string;
+  source?: "bootstrap" | "detect";
+}
+
+/** Agent ended the call after farewell. */
+export interface VoiceEndCallMessage {
+  type: "end_call";
+}
+
 export type VoiceServerMessage =
   | VoiceProductsMessage
   | VoiceOpenProductMessage
@@ -66,4 +80,6 @@ export type VoiceServerMessage =
   | VoiceSuggestGiftMessage
   | VoiceDeliveryQuoteMessage
   | VoiceTrackOrderMessage
-  | VoiceShowGiftFinderMessage;
+  | VoiceShowGiftFinderMessage
+  | VoiceLanguageMessage
+  | VoiceEndCallMessage;

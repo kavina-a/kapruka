@@ -1,5 +1,6 @@
 import type { UIMessage } from "ai";
 import type { VoiceEntry, VoiceProductSet } from "@/lib/commerce/store";
+import { isHiddenUserMessage } from "@/lib/chat/gift-finder";
 
 export type ThreadItem =
   | { type: "text"; key: string; sortKey: number; message: UIMessage }
@@ -18,6 +19,7 @@ export function buildThread(
   const items: ThreadItem[] = [];
 
   messages.forEach((message, index) => {
+    if (isHiddenUserMessage(message)) return;
     items.push({
       type: "text",
       key: message.id,

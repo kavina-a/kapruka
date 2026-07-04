@@ -406,6 +406,212 @@
         "must_not_contain": ["milk chocolates", "chocolates", "upgrade", "premium", "also add", "pair with", "alongside"],
         "notes": "CRITICAL. No cross-sell, no upsell in sympathy flow. Empathy first. No toxic positivity."
       }
+    },
+
+    {
+      "id": "S25_dad_no_product_hint",
+      "name": "Recipient-led — something for my dad, no product hint",
+      "category": "recipient_flow",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "Hi, I want to get something for my dad." }
+      ],
+      "expect": {
+        "tool_called": "searchGifts",
+        "tool_params_not_contain": { "occasionId": "father" },
+        "notes": "CRITICAL — regression test. Relationship known, no taste info: must search FIRST (never ask a question before searching — the grader only checks that searchGifts fires; asking a personal lean-in question AFTER cards, like 'what does he like', is correct and expected), and must pick a real product vertical (chocolates/perfumes/fruit) instead of the non-existent 'father' MCP category."
+      }
+    },
+
+    {
+      "id": "S26_mom_taste_unknown",
+      "name": "Recipient-led — something nice for my mum, taste unknown",
+      "category": "recipient_flow",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "I want to get something nice for my mum, not totally sure what she'd like." }
+      ],
+      "expect": {
+        "tool_called": "searchGifts",
+        "must_not_contain": ["Here are some options", "I found these products"],
+        "notes": "Occasion (mum) IS known — this is NOT Case B uncertainty even though 'not sure' appears. Must search immediately, not open the picker."
+      }
+    },
+
+    {
+      "id": "S27_sister_birthday_no_idea_taste",
+      "name": "Recipient-led — sister's birthday, no idea what she'd like",
+      "category": "recipient_flow",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "It's my sister's birthday next week and I have no idea what she'd like." }
+      ],
+      "expect": {
+        "tool_called": "searchGifts",
+        "tool_not_called": "showGiftFinder",
+        "notes": "Occasion (birthday) AND recipient (sister) are both known — 'no idea' here refers to taste, not being fully lost. Case B (picker) requires NO clear occasion/recipient at all, so this must search, not open the picker."
+      }
+    },
+
+    {
+      "id": "S28_genuine_uncertainty_first_turn",
+      "name": "Genuine uncertainty on the very first message",
+      "category": "gift_finder",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "Hey, I need to get a gift for someone but honestly I have no idea what to get. Surprise me." }
+      ],
+      "expect": {
+        "tool_called": "showGiftFinder",
+        "tool_not_called": "searchGifts",
+        "notes": "No recipient, no occasion, no product hint — truly lost. Case B applies even on turn 1 (this is a base-prompt rule, not the server's forced-injection safety net which only kicks in from turn 2)."
+      }
+    },
+
+    {
+      "id": "S29_uncertain_second_turn_regression",
+      "name": "REGRESSION — 'i dont really know' on turn 2 must open the picker",
+      "category": "gift_finder",
+      "session_id": "chain_giftfinder_01",
+      "turns": [
+        { "role": "user", "content": "hi i wanna get something for my dad" },
+        { "role": "assistant", "content": "[PLACEHOLDER — dad gift turn]" },
+        { "role": "user", "content": "i dont really know" }
+      ],
+      "expect": {
+        "tool_called": "showGiftFinder",
+        "tool_not_called": "searchGifts",
+        "notes": "CRITICAL REGRESSION TEST for the exact bug reported in production: 'i dont really know' was not matched by the old uncertainty regex (it only matched 'dont know' with nothing in between), so the picker never opened and the model kept guessing searches instead. This must now force showGiftFinder."
+      }
+    },
+
+    {
+      "id": "S30_uncertain_after_gift_finder_complete",
+      "name": "Still unsure after finishing the picker — pivot, don't re-open it",
+      "category": "gift_finder",
+      "session_id": "chain_giftfinder_02",
+      "turns": [
+        { "role": "user", "content": "Something for my dad, I'm not sure what he'd like." },
+        { "role": "assistant", "content": "[PLACEHOLDER — dad gift turn]" },
+        { "role": "user", "content": "Honestly I still have no idea, whatever you think is best." }
+      ],
+      "gift_finder_already_complete": true,
+      "expect": {
+        "tool_called": "searchGifts",
+        "tool_not_called": "showGiftFinder",
+        "tool_params_not_contain": { "occasionId": "father" },
+        "notes": "Buyer already completed the chip picker this session (simulated via gift_finder_already_complete). Re-opening the picker would feel like a loop — must instead search a fresh occasionId directly."
+      }
+    },
+
+    {
+      "id": "S31_rejection_pivot_from_chocolates",
+      "name": "Dad rejects chocolates — must pivot category, not repeat it",
+      "category": "recipient_flow",
+      "session_id": "chain_rejection_01",
+      "turns": [
+        { "role": "user", "content": "Something for my dad, please." },
+        { "role": "assistant", "content": "[PLACEHOLDER — dad chocolates turn]" },
+        { "role": "user", "content": "He doesn't really like chocolates." }
+      ],
+      "expect": {
+        "tool_called": "searchGifts",
+        "tool_called_any": ["rememberRecipientDislike"],
+        "tool_params_not_contain": { "occasionId": "chocolates" },
+        "notes": "Explicit category rejection must store the dislike and pivot to a genuinely different vertical (perfumes/fruit/cakes) — not retry chocolates."
+      }
+    },
+
+    {
+      "id": "S32_delegate_dad_busy",
+      "name": "Delegate mode — dad's birthday today, too busy to choose",
+      "category": "delegate",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "It's my dad's birthday today and I'm completely swamped at work — just pick something good for him." }
+      ],
+      "expect": {
+        "tool_called": "searchGifts",
+        "must_not_contain": ["what does he like", "any specific", "what occasion", "who is this for"],
+        "notes": "Recipient (dad) AND occasion (birthday) both known + explicit delegate signal ('just pick') → ZERO questions, search immediately."
+      }
+    },
+
+    {
+      "id": "S33_dad_specific_product_cologne",
+      "name": "Product type known wins — cologne for dad",
+      "category": "recipient_flow",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "I want to get some cologne for my dad." }
+      ],
+      "expect": {
+        "tool_called": "searchGifts",
+        "tool_params_contain": { "occasionId": "perfumes" },
+        "notes": "Product type (cologne) is explicit, so RULE A applies: occasionId must be the product vertical 'perfumes', not 'father'. Recipient word must not leak into query."
+      }
+    },
+
+    {
+      "id": "S34_budget_for_mom",
+      "name": "Budget-first — Rs 4000 for mom",
+      "category": "budget",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "I have around 4000 rupees to spend on something for my mom." }
+      ],
+      "expect": {
+        "tool_called_any": ["searchGifts", "optimizeBudget"],
+        "must_not_contain": ["who is this for", "what occasion"],
+        "notes": "Budget-first buyers get results immediately, not a form — recipient is already known (mom) so there's nothing left to ask before acting. (maxPrice/budget field name differs between searchGifts and optimizeBudget, so not asserted directly.)"
+      }
+    },
+
+    {
+      "id": "S35_brother_birthday_turning_20",
+      "name": "Recipient-led — younger brother turning 20",
+      "category": "recipient_flow",
+      "session_id": null,
+      "turns": [
+        { "role": "user", "content": "Need something for my younger brother, he's turning 20 next week." }
+      ],
+      "expect": {
+        "tool_called": "searchGifts",
+        "notes": "Birthday occasion known — search first, ask a lean-in question after cards, not before."
+      }
+    },
+
+    {
+      "id": "S36_still_uncertain_after_recipient_known",
+      "name": "Recipient known, then becomes uncertain — must open picker on turn 2",
+      "category": "gift_finder",
+      "session_id": "chain_giftfinder_03",
+      "turns": [
+        { "role": "user", "content": "something for my dad" },
+        { "role": "assistant", "content": "[PLACEHOLDER — dad gift turn]" },
+        { "role": "user", "content": "actually you pick, whatever's good" }
+      ],
+      "expect": {
+        "tool_called": "showGiftFinder",
+        "tool_not_called": "searchGifts",
+        "notes": "Even though the recipient was already known from turn 1, once the buyer explicitly hands off the decision ('you pick') on a later turn, the picker must open rather than the model guessing another category."
+      }
+    },
+
+    {
+      "id": "S37_vague_suggest_me_second_turn",
+      "name": "'Suggest me' with no prior context — must not stall silently",
+      "category": "gift_finder",
+      "session_id": "chain_giftfinder_04",
+      "turns": [
+        { "role": "user", "content": "hi there" },
+        { "role": "assistant", "content": "[MODE: CHAT] Hey! What are we shopping for today?" },
+        { "role": "user", "content": "suggest me something" }
+      ],
+      "expect": {
+        "tool_called_any": ["searchGifts", "showGiftFinder"],
+        "notes": "REGRESSION-STYLE TEST: in production this exact pattern (a bare 'suggest me' with zero recipient/occasion context) produced a turn with no tool call at all — the agent just talked. Must take SOME concrete action (search a sensible default or open the picker), never stall with text only."
+      }
     }
 
   ]

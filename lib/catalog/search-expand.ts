@@ -65,30 +65,59 @@ const STOPWORDS = new Set([
 
 /** Franchise / theme → broader related queries when the exact item is missing. */
 const RELATED_QUERY_CHAINS: Array<{ match: RegExp; queries: string[] }> = [
-  // Specific flower types → category-anchored flower alternatives (always searched with occasionId flowers)
+  // Roses — "roses" (plural) fails on Kapruka; singular "rose" / "rose bouquet" works.
+  {
+    match: /roses?/i,
+    queries: ["rose", "red rose", "rose bouquet", "lily", "orchid"],
+  },
+  // Generic bouquet / arrangement searches — "bouquet" alone returns nothing; use specific types.
+  {
+    match: /bouquet|arrangement/i,
+    queries: ["rose bouquet", "orchid", "lily", "red rose", "rose"],
+  },
+  // Generic "flowers" keyword — the flowers category filter is broken; fall back to specific types.
+  {
+    match: /\bflowers?\b/i,
+    queries: ["orchid", "lily", "rose", "rose bouquet", "red rose"],
+  },
+  // Specific flower types — "flower bouquet" / "mixed flowers" don't work; use specific types.
   {
     match: /tulip/i,
-    queries: ["tulip bouquet", "mixed flowers", "flower bouquet", "roses", "fresh flowers"],
+    queries: ["lily", "orchid", "rose bouquet", "red rose", "rose"],
   },
   {
     match: /lily|lilies/i,
-    queries: ["lily bouquet", "lilies arrangement", "white lilies", "mixed flowers", "flower bouquet", "roses"],
+    queries: ["lily", "orchid", "rose bouquet", "rose"],
   },
   {
     match: /sunflower/i,
-    queries: ["sunflower bouquet", "sunflower", "mixed flowers", "flower bouquet", "fresh flowers"],
+    queries: ["orchid", "lily", "rose bouquet", "red rose"],
   },
   {
     match: /orchid/i,
-    queries: ["orchid", "orchid arrangement", "mixed flowers", "flower bouquet"],
+    queries: ["orchid", "lily", "rose bouquet", "rose"],
   },
   {
     match: /carnation/i,
-    queries: ["carnation bouquet", "mixed flowers", "flower bouquet", "roses"],
+    queries: ["rose bouquet", "lily", "orchid", "red rose"],
   },
   {
     match: /gerbera|daisy|freesia|hyacinth|chrysanthemum|anthurium|peony|calla|lavender/i,
-    queries: ["mixed flowers", "flower bouquet", "fresh flowers", "roses"],
+    queries: ["lily", "orchid", "rose bouquet", "red rose"],
+  },
+  // Cake variety searches — "birthday cake" / "cake" alone fails on Kapruka; use specific types.
+  {
+    match: /birthday\s+cake|cake\s+for/i,
+    queries: ["ribbon cake", "chocolate cake"],
+  },
+  {
+    match: /\bcakes?\b/i,
+    queries: ["chocolate cake", "ribbon cake"],
+  },
+  // Sympathy — "sympathy flowers" works; individual keywords work too.
+  {
+    match: /sympathy|condolence|funeral|grief|bereavement/i,
+    queries: ["sympathy flowers", "sympathy", "condolence", "funeral wreath"],
   },
   // Batman / superhero
   {

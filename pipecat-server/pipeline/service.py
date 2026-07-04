@@ -14,7 +14,7 @@ Traditional provider choices (all via .env):
 from __future__ import annotations
 
 import uuid
-from typing import Any, Tuple
+from typing import Any, Optional, Tuple
 
 from loguru import logger
 
@@ -30,7 +30,9 @@ from pipecat.transports.base_transport import BaseTransport
 from pipecat.workers.runner import WorkerRunner
 
 from config import LLMProvider, PipelineMode, Settings, STTProvider, TTSProvider
+from language import tts_code
 from persona import build_system_instruction
+from pipeline.language_sync import LanguageSyncProcessor, session_from_runner_body
 from tools.mcp_tools import KaprukaMCPTools
 
 
@@ -39,23 +41,42 @@ class PipelineService:
         self._settings = settings
         self._worker: PipelineWorker | None = None
         self._ruka: KaprukaMCPTools | None = None
+        self._lang_session = session_from_runner_body(
+            None,
+            english_voice=settings.gemini_voice,
+        )
 
     # ------------------------------------------------------------------
     # Realtime pipeline — Gemini Live (speech-to-speech)
     # ------------------------------------------------------------------
 
     def _build_gemini_settings(self) -> GeminiLiveLLMService.Settings:
+        """Build Gemini Live settings.
+
+        Multilingual mode intentionally sets ``language=None``. Pipecat's
+        default is ``en-US``, which pins English and breaks Sinhala/Tamil
+        auto-detect. Native-audio models ignore language pins and choose the
+        spoken language automatically; older live models also behave better
+        with no pin.
+        """
         s = self._settings
+        preferred = self._lang_session.preferred
         kwargs: dict[str, Any] = dict(
-            system_instruction=build_system_instruction(),
+            system_instruction=build_system_instruction(preferred_language=preferred),
             voice=s.gemini_voice,
             temperature=0.7,
             model=s.gemini_model,
         )
-        # Only pin when GEMINI_LANGUAGE is set. Unset = Gemini multilingual auto-detect
-        # (English, Sinhala, Tamil, Tanglish) — do not default to si-LK or en-US here.
+
         if s.gemini_language:
+            # Explicit env pin (whole-process lock) — only when operators set it.
             kwargs["language"] = s.gemini_language
+            logger.info(f"Gemini language pinned via GEMINI_LANGUAGE={s.gemini_language}")
+        else:
+            # Critical: override Pipecat's en-US default so auto-detect works.
+            kwargs["language"] = None
+            logger.info("Gemini language=auto (no pin) — English / Sinhala / Tamil / Tanglish")
+
         return GeminiLiveLLMService.Settings(**kwargs)
 
     def _create_realtime_pipeline(
@@ -88,10 +109,19 @@ class PipelineService:
             realtime_service_mode=True,
         )
 
+        # After LLM: observe transcripts for telemetry / UI language events.
+        lang_sync = LanguageSyncProcessor(
+            self._lang_session,
+            traditional=False,
+            push_ui=None,  # wired after worker exists
+        )
+        self._lang_sync = lang_sync
+
         pipeline = Pipeline([
             transport.input(),
             user_agg,
             llm,
+            lang_sync,
             transport.output(),
             assistant_agg,
         ])
@@ -113,20 +143,20 @@ class PipelineService:
                 settings=DeepgramSTTService.Settings(model=s.stt_model),
             )
         else:
-            # openai (Whisper)
+            # openai (Whisper) — omit language so Whisper auto-detects
             if not s.openai_api_key:
                 raise RuntimeError("OPENAI_API_KEY is required when STT_PROVIDER=openai.")
             from pipecat.services.openai.stt import OpenAISTTService
             model = s.stt_model if s.stt_model != "nova-2-general" else "whisper-1"
-            logger.info(f"STT | openai model={model}")
+            logger.info(f"STT | openai model={model} language=auto")
             return OpenAISTTService(api_key=s.openai_api_key, model=model)
 
     def _build_llm(self, ruka: KaprukaMCPTools):
         s = self._settings
+        preferred = self._lang_session.preferred
+        instruction = build_system_instruction(preferred_language=preferred)
+
         if s.llm_provider == LLMProvider.GOOGLE:
-            # GoogleLLMService (text mode) uses a different tool API from OpenAI.
-            # Function schemas must be passed at construction time; register_function
-            # is not available. For full tool support in traditional mode use openai.
             if not s.google_api_key:
                 raise RuntimeError("GOOGLE_API_KEY is required when LLM_PROVIDER=google.")
             from pipecat.services.google.llm import GoogleLLMService
@@ -139,11 +169,10 @@ class PipelineService:
             llm = GoogleLLMService(
                 api_key=s.google_api_key,
                 settings=GoogleLLMService.Settings(model=s.llm_model),
-                system_instruction=build_system_instruction(),
+                system_instruction=instruction,
             )
             return llm
         else:
-            # openai (default) — full function-calling support
             if not s.openai_api_key:
                 raise RuntimeError("OPENAI_API_KEY is required when LLM_PROVIDER=openai.")
             from pipecat.services.openai.llm import OpenAILLMService
@@ -155,21 +184,32 @@ class PipelineService:
             ruka.register_on_llm(llm)
             return llm
 
+    def _initial_tts_language(self) -> str:
+        """TTS language tag aligned with session bootstrap language."""
+        lang = self._lang_session.bootstrap()
+        # English profile always speaks English.
+        if self._settings.voice_profile.value == "english":
+            return "en"
+        return tts_code(lang)
+
     def _build_tts(self):
         s = self._settings
+        tts_lang = self._initial_tts_language()
+
         if s.tts_provider == TTSProvider.ELEVENLABS:
             if not s.elevenlabs_api_key:
                 raise RuntimeError("ELEVENLABS_API_KEY is required when TTS_PROVIDER=elevenlabs.")
             from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
             logger.info(
-                f"TTS | elevenlabs model={s.elevenlabs_model} voice={s.elevenlabs_voice_id} language=en"
+                f"TTS | elevenlabs model={s.elevenlabs_model} "
+                f"voice={s.elevenlabs_voice_id} language={tts_lang}"
             )
             return ElevenLabsTTSService(
                 api_key=s.elevenlabs_api_key,
                 settings=ElevenLabsTTSService.Settings(
                     voice=s.elevenlabs_voice_id,
                     model=s.elevenlabs_model,
-                    language="en",
+                    language=tts_lang,
                 ),
             )
         if s.tts_provider == TTSProvider.CARTESIA:
@@ -187,7 +227,6 @@ class PipelineService:
                 ),
             )
         else:
-            # openai
             if not s.openai_api_key:
                 raise RuntimeError("OPENAI_API_KEY is required when TTS_PROVIDER=openai.")
             from pipecat.services.openai.tts import OpenAITTSService
@@ -203,24 +242,36 @@ class PipelineService:
         ruka: KaprukaMCPTools,
     ) -> Tuple[Pipeline, tuple]:
         s = self._settings
+        preferred = self._lang_session.preferred
+        instruction = build_system_instruction(preferred_language=preferred)
+
         logger.info(
             f"Traditional pipeline | stt={s.stt_provider.value}"
             f" llm={s.llm_provider.value}/{s.llm_model}"
             f" tts={s.tts_provider.value}"
+            f" bootstrap_lang={self._lang_session.bootstrap().value}"
         )
 
         stt = self._build_stt()
         llm = self._build_llm(ruka)
         tts = self._build_tts()
 
+        lang_sync = LanguageSyncProcessor(
+            self._lang_session,
+            traditional=True,
+            push_ui=None,
+        )
+        self._lang_sync = lang_sync
+
         context = LLMContext(
-            messages=[{"role": "system", "content": build_system_instruction()}],
+            messages=[{"role": "system", "content": instruction}],
         )
         user_agg, assistant_agg = LLMContextAggregatorPair(context)
 
         pipeline = Pipeline([
             transport.input(),
             stt,
+            lang_sync,
             user_agg,
             llm,
             tts,
@@ -239,12 +290,22 @@ class PipelineService:
         runner_args: RunnerArguments,
     ) -> PipelineWorker:
         conversation_id = f"ruka-{uuid.uuid4().hex[:12]}"
+
+        # Session prefs from browser (UI language, etc.) via offer requestData.
+        self._lang_session = session_from_runner_body(
+            getattr(runner_args, "body", None),
+            english_voice=self._settings.gemini_voice,
+        )
+
         logger.info(
             f"Starting session {conversation_id} | mode={self._settings.pipeline_mode.value}"
             f" profile={self._settings.voice_profile.value}"
+            f" preferred_lang="
+            f"{self._lang_session.preferred.value if self._lang_session.preferred else None}"
         )
 
         self._ruka = KaprukaMCPTools()
+        self._lang_sync: Optional[LanguageSyncProcessor] = None
 
         if self._settings.pipeline_mode == PipelineMode.TRADITIONAL:
             pipeline, _ = self._create_traditional_pipeline(transport, self._ruka)
@@ -267,10 +328,27 @@ class PipelineService:
                 await self._worker.queue_frames([RTVIServerMessageFrame(data=data)])
 
         self._ruka.set_push_ui(push_ui)
+        if self._lang_sync is not None:
+            self._lang_sync._push_ui = push_ui
 
         @transport.event_handler("on_client_connected")
         async def on_client_connected(transport_local, client):  # noqa: ANN001
             logger.info("Client connected")
+            # Tell the browser which language/voice the session starts with.
+            bootstrap = self._lang_session.bootstrap()
+            await push_ui(
+                {
+                    "type": "language",
+                    "language": bootstrap.value,
+                    "tts_language": (
+                        "en"
+                        if self._settings.voice_profile.value == "english"
+                        else tts_code(bootstrap)
+                    ),
+                    "voice": self._settings.gemini_voice,
+                    "source": "bootstrap",
+                }
+            )
             if self._settings.greet_first and self._worker:
                 await self._worker.queue_frames([LLMRunFrame()])
 

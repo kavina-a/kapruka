@@ -14,6 +14,8 @@ export interface Expectation {
   tool_called_any?: string[];
   tool_not_called?: string;
   tool_params_contain?: Record<string, unknown>;
+  /** Fails if any of these key/value pairs DOES match the actual tool input (e.g. occasionId must never be 'father'). */
+  tool_params_not_contain?: Record<string, unknown>;
   tone_signals?: string[];
   notes?: string;
 }
@@ -25,6 +27,8 @@ export interface Scenario {
   session_id: string | null;
   turns: Turn[];
   expect: Expectation;
+  /** Simulates commerceContext.giftFinderState — set to true for "already completed the picker" scenarios. */
+  gift_finder_already_complete?: boolean;
 }
 
 export interface GradeCheck {

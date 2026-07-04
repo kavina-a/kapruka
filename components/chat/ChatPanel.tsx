@@ -15,7 +15,6 @@ import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { ProductCarousel } from "@/components/products/ProductCarousel";
 import { GiftFinderCard } from "@/components/chat/GiftFinderCard";
-import { buildGiftFinderMessage } from "@/lib/chat/gift-finder";
 import type { GiftFinderState } from "@/lib/catalog/gift-finder-types";
 import { GIFT_RELATIONSHIPS_BY_ID } from "@/lib/catalog/gift-relationships";
 
@@ -132,29 +131,32 @@ function Greeting() {
 
 /** Warm spoken line Ruka says before showing the picker chips. */
 function rukaPickerIntro(prefill: Partial<GiftFinderState> | null): string {
-  const rel = prefill?.relationship
-    ? GIFT_RELATIONSHIPS_BY_ID[prefill.relationship]?.label
-    : null;
-  if (rel) return `No worries — let me ask you a couple of quick things about her so I can pull ideas that actually fit.`;
+  const relId = prefill?.relationship;
+  const rel = relId ? GIFT_RELATIONSHIPS_BY_ID[relId] : null;
+  if (rel) {
+    const about =
+      relId === "father"
+        ? "him"
+        : relId === "mother"
+          ? "her"
+          : "them";
+    return `No worries — a couple of quick things about ${about} and I'll pull ideas that actually fit.`;
+  }
   return `No worries — tell me a little about them and I'll pull ideas that actually fit.`;
 }
 
 /** Category picker surfaced mid-conversation when the buyer is stuck. */
 function GiftFinderInline({
-  sendText,
+  submitGiftFinderPicks,
 }: {
-  sendText: (text: string) => void;
+  submitGiftFinderPicks: (state: GiftFinderState) => void;
 }) {
-  const setGiftFinderState = useCommerce((s) => s.setGiftFinderState);
   const closeGiftFinder = useCommerce((s) => s.closeGiftFinder);
   const prefill = useCommerce((s) => s.giftFinderPrefill);
   const setGiftFinderPrefill = useCommerce((s) => s.setGiftFinderPrefill);
 
   const handleComplete = (state: GiftFinderState) => {
-    setGiftFinderState(state);
-    setGiftFinderPrefill(null);
-    closeGiftFinder();
-    sendText(buildGiftFinderMessage(state));
+    submitGiftFinderPicks(state);
   };
 
   const handleDismiss = () => {
@@ -172,6 +174,7 @@ function GiftFinderInline({
         </p>
         <GiftFinderCard
           initial={prefill ?? undefined}
+          compact={Boolean(prefill?.relationship)}
           onComplete={handleComplete}
           onDismiss={handleDismiss}
         />
@@ -181,7 +184,7 @@ function GiftFinderInline({
 }
 
 export function ChatPanel() {
-  const { messages, status, sendText, error } = useRukaChat();
+  const { messages, status, sendText, submitGiftFinderPicks, error } = useRukaChat();
   const giftMessage = useCommerce((s) => s.giftMessage);
   const voiceOpen = useCommerce((s) => s.voiceOpen);
   const voiceMessages = useCommerce((s) => s.voiceMessages);
@@ -249,7 +252,7 @@ export function ChatPanel() {
               return <VoiceMessage key={item.key} entry={item.entry} />;
             })}
 
-            {giftFinderOpen && <GiftFinderInline sendText={sendText} />}
+            {giftFinderOpen && <GiftFinderInline submitGiftFinderPicks={submitGiftFinderPicks} />}
 
             {showTyping && <TypingRow />}
 

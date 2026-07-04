@@ -20,6 +20,7 @@ import type {
 import { cn, formatMoney } from "@/lib/utils";
 import { formatHumanDate } from "@/lib/commerce/dates";
 import { stripProductEcho } from "@/lib/chat/stripProductEcho";
+import { isHiddenUserMessage } from "@/lib/chat/gift-finder";
 import { parseModeSignal, stripModeSignal, type AgentMode } from "@/lib/agent/modes";
 import {
   AlertTriangle,
@@ -114,27 +115,54 @@ function ErrorNote({ text }: { text: string }) {
   );
 }
 
+function relativeDeliveryDate(iso: string): string {
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  if (iso === todayStr) return "today";
+  const tomorrowDate = new Date(today);
+  tomorrowDate.setDate(today.getDate() + 1);
+  const tomorrowStr = `${tomorrowDate.getFullYear()}-${String(tomorrowDate.getMonth() + 1).padStart(2, "0")}-${String(tomorrowDate.getDate()).padStart(2, "0")}`;
+  if (iso === tomorrowStr) return "tomorrow";
+  const [y, m, d] = iso.split("-").map(Number);
+  const target = new Date(Date.UTC(y, m - 1, d));
+  const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  const diff = Math.round((target.getTime() - todayUTC.getTime()) / 86_400_000);
+  if (diff > 0 && diff <= 6) return `in ${diff} day${diff === 1 ? "" : "s"}`;
+  return formatHumanDate(iso);
+}
+
 function DeliveryQuoteCard({ quote }: { quote: DeliveryQuote }) {
-  return (
-    <div
-      className={cn(
-        "rounded-2xl border p-3.5",
-        quote.available
-          ? "border-brand-500/30 bg-brand-500/10"
-          : "border-rose-500/30 bg-rose-500/10",
-      )}
-    >
-      <div className="flex items-center gap-2">
-        <Truck className={cn("size-4", quote.available ? "text-brand-400" : "text-rose-300")} />
-        <span className="font-medium text-ink">
-          {quote.available ? "Delivery available" : "Not deliverable"}
+  // "Not available on this date" — render as a quiet inline note rather than a red error card.
+  // The bot typically probes today then tomorrow; the red card for today is confusing.
+  if (!quote.available) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-line bg-canvas-2 px-3.5 py-2.5 text-sm text-ink-muted">
+        <Truck className="size-3.5 shrink-0 text-ink-faint" />
+        <span>
+          Not available for {formatHumanDate(quote.date)} in {quote.city}.
         </span>
       </div>
-      <div className="mt-2 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3 sm:gap-2">
-        <div>
-          <div className="text-[11px] text-ink-faint">City</div>
-          <div className="text-ink">{quote.city}</div>
+    );
+  }
+
+  const rel = relativeDeliveryDate(quote.date);
+  const relLabel = rel === formatHumanDate(quote.date) ? null : rel;
+
+  return (
+    <div className="rounded-2xl border border-brand-500/30 bg-brand-500/10 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Truck className="size-4 text-brand-400" />
+          <span className="font-medium text-ink">
+            Delivery to {quote.city}
+          </span>
         </div>
+        <span className="rounded-full bg-brand-500/20 px-2.5 py-0.5 text-[12px] font-semibold text-brand-300">
+          {relLabel ? relLabel.charAt(0).toUpperCase() + relLabel.slice(1) : formatHumanDate(quote.date)}
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
         <div>
           <div className="text-[11px] text-ink-faint">Date</div>
           <div className="text-ink">{formatHumanDate(quote.date)}</div>
@@ -142,12 +170,19 @@ function DeliveryQuoteCard({ quote }: { quote: DeliveryQuote }) {
         <div>
           <div className="text-[11px] text-ink-faint">Delivery fee</div>
           <div className="font-semibold text-gold-300">
-            {quote.available ? formatMoney(quote.rate, quote.currency) : "—"}
+            {formatMoney(quote.rate, quote.currency)}
           </div>
         </div>
+        {relLabel && (
+          <div className="hidden sm:block">
+            <div className="text-[11px] text-ink-faint">Arrives</div>
+            <div className="capitalize text-ink">{relLabel}</div>
+          </div>
+        )}
       </div>
+
       {quote.perishableWarning && (
-        <div className="mt-2 flex items-start gap-1.5 text-xs text-gold-300">
+        <div className="mt-3 flex items-start gap-1.5 rounded-lg bg-gold-500/10 px-2.5 py-2 text-xs text-gold-300">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
           {quote.perishableWarning}
         </div>
@@ -321,6 +356,8 @@ function SuggestGiftMessageResult({ message }: { message: string }) {
 }
 
 export function Message({ message }: { message: UIMessage }) {
+  if (isHiddenUserMessage(message)) return null;
+
   const isUser = message.role === "user";
   const setActiveSet = useCommerce((s) => s.setActiveSet);
 

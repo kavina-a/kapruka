@@ -74,9 +74,14 @@ export function searchSeed(opts: SeedSearchOpts): GiftDetails[] {
         .filter((x) => x.score > 0)
         .sort((a, b) => b.score - a.score)
         .map((x) => x.p);
-      // If the exact variety isn't in the catalogue (e.g. tulips, lilies),
-      // keep the occasion pool rather than returning nothing.
-      if (scored.length) items = scored;
+      if (scored.length) {
+        items = scored;
+      } else if (!occasionId) {
+        // Query provided but nothing matched and no occasion to fall back on
+        // — return empty rather than the whole catalog, which would surface
+        // completely unrelated products (e.g. birthday cakes for "jewellery").
+        return [];
+      }
     }
   }
 

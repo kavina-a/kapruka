@@ -10,7 +10,11 @@
     "pipecat:sync": "cd pipecat-server && uv sync",
     "pipecat:dev": "cd pipecat-server && uv run bot.py",
     "eval:chat": "tsx eval/run.ts",
-    "eval:chat:verbose": "tsx eval/run.ts --verbose"
+    "eval:chat:verbose": "tsx eval/run.ts --verbose",
+    "eval:logic": "tsx eval/logic-tests.ts",
+    "eval:voice": "cd pipecat-server && uv run --with pytest --with openai pytest tests/ -v",
+    "eval:voice:unit": "cd pipecat-server && uv run --with pytest pytest tests/test_language.py tests/test_persona.py tests/test_pipeline_settings.py -v",
+    "eval:voice:live": "cd pipecat-server && uv run --with pytest --with openai pytest tests/test_voice_eval.py -v"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.88",

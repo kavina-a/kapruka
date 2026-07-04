@@ -647,6 +647,17 @@ class KaprukaMCPTools:
         await self._push({"type": "open_checkout"})
         await params.result_callback({"opened": True, "note": "Checkout drawer opened on screen."})
 
+    async def show_gift_finder(self, params: FunctionCallParams) -> None:
+        await self._push({"type": "show_gift_finder"})
+        await params.result_callback({
+            "shown": True,
+            "note": "Category picker is on screen — caller can tap categories and optional budget.",
+        })
+
+    async def end_call(self, params: FunctionCallParams) -> None:
+        await self._push({"type": "end_call"})
+        await params.result_callback({"ended": True})
+
     async def show_checkout_form(self, params: FunctionCallParams) -> None:
         args = params.arguments or {}
         step = str(args.get("step") or "review")
@@ -819,6 +830,26 @@ class KaprukaMCPTools:
                 properties={},
                 required=[],
                 handler=self.open_checkout,
+            ),
+            FunctionSchema(
+                name="show_gift_finder",
+                description=(
+                    "Open the on-screen category picker when the caller is stuck choosing "
+                    "a gift type. Not on the first turn."
+                ),
+                properties={},
+                required=[],
+                handler=self.show_gift_finder,
+            ),
+            FunctionSchema(
+                name="end_call",
+                description=(
+                    "End the voice call. Call in the SAME turn as the farewell phrase, "
+                    "never before saying goodbye."
+                ),
+                properties={},
+                required=[],
+                handler=self.end_call,
             ),
             FunctionSchema(
                 name="show_checkout_form",

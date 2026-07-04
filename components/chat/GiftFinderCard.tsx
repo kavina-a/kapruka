@@ -107,10 +107,13 @@ const EMPTY_STATE: GiftFinderState = {
 
 export function GiftFinderCard({
   initial,
+  compact = false,
   onComplete,
   onDismiss,
 }: {
   initial?: Partial<GiftFinderState>;
+  /** Smaller layout when relationship is already known from chat. */
+  compact?: boolean;
   onComplete: (state: GiftFinderState) => void;
   onDismiss?: () => void;
 }) {
@@ -158,18 +161,21 @@ export function GiftFinderCard({
   const showProgress = steps.length > 1;
 
   return (
-    <div className="w-full rounded-3xl border border-line bg-canvas-2 p-5 shadow-sm">
-      {/* Only show sub-headline if relationship is already known (skip the headline — Ruka said it above) */}
-      {intro.sub && (
-        <div className="mb-4">
-          {!initial?.relationship && (
-            <p className="text-[13px] font-medium text-ink-muted">{intro.sub}</p>
-          )}
+    <div
+      className={cn(
+        "w-full rounded-2xl border border-line bg-canvas-2 shadow-sm",
+        compact ? "p-3.5" : "rounded-3xl p-5",
+      )}
+    >
+      {/* Only show sub-headline when relationship is unknown */}
+      {intro.sub && !initial?.relationship && (
+        <div className={cn(compact ? "mb-3" : "mb-4")}>
+          <p className="text-[13px] font-medium text-ink-muted">{intro.sub}</p>
         </div>
       )}
 
       {showProgress && (
-        <div className="mb-4 flex items-center gap-1.5">
+        <div className={cn("flex items-center gap-1.5", compact ? "mb-3" : "mb-4")}>
           {steps.map((_, i) => (
             <div
               key={i}
@@ -242,11 +248,13 @@ export function GiftFinderCard({
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.18 }}
           >
-            <p className="mb-1 text-sm font-medium text-ink">What&apos;s their vibe?</p>
-            <p className="mb-4 text-xs text-ink-muted">
+            <p className={cn("mb-1 font-medium text-ink", compact ? "text-sm" : "text-sm")}>
+              What&apos;s their vibe?
+            </p>
+            <p className={cn("mb-3 text-ink-muted", compact ? "text-[11px]" : "mb-4 text-xs")}>
               Pick one or more — I&apos;ll match the picks to their personality.
             </p>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div className={cn("grid grid-cols-2 gap-1.5", compact ? "sm:grid-cols-3" : "gap-2 sm:grid-cols-3")}>
               {PERSONALITY_TRAITS.map((t) => (
                 <Chip
                   key={t.id}

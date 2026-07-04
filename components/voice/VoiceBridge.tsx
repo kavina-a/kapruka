@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { usePipecatConversation } from "@pipecat-ai/client-react";
+import { usePipecatClient, usePipecatConversation } from "@pipecat-ai/client-react";
 import { RTVIEvent, useRTVIClientEvent } from "@/lib/voice/rtvi";
 import { useCommerce } from "@/lib/commerce/store";
 import { isGiftFinderUncertainty } from "@/lib/chat/gift-finder";
@@ -15,6 +15,7 @@ import { normalizeVoiceProduct, parseVoiceServerMessage } from "@/lib/voice/serv
  * ChatPanel can display it inline in the thread. Must live inside PipecatClientProvider.
  */
 export function VoiceBridge() {
+  const client = usePipecatClient();
   const { messages } = usePipecatConversation();
   const mergeVoiceTranscript = useCommerce((s) => s.mergeVoiceTranscript);
   const handledUncertaintyRef = useRef<string | null>(null);
@@ -98,11 +99,18 @@ export function VoiceBridge() {
         store.openGiftFinder();
         break;
       }
+      case "end_call": {
+        // Agent farewell + hang-up — disconnect transport, then close UI.
+        void client?.disconnect().catch(() => undefined);
+        store.closeVoice();
+        break;
+      }
+      case "language":
       case "delivery_quote":
       default:
         break;
     }
-  }, []);
+  }, [client]);
 
   useRTVIClientEvent(RTVIEvent.ServerMessage, onServerMessage);
   return null;

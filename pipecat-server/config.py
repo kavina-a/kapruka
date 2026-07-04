@@ -17,8 +17,9 @@ Quick recipes (copy to .env and fill in API keys):
     # Realtime Gemini — multilingual voice (recommended)
     PIPECAT_PIPELINE_MODE=realtime
     GOOGLE_API_KEY=...
-    GEMINI_MODEL=gemini-2.0-flash-live-001
-    # GEMINI_LANGUAGE unset → auto language detection
+    GEMINI_MODEL=gemini-2.5-flash-native-audio-preview-12-2025
+    GEMINI_VOICE=Aoede
+    # GEMINI_LANGUAGE unset → auto language detection (do NOT pin en-US)
 
     # Traditional — English with ElevenLabs TTS
     PIPECAT_PIPELINE_MODE=traditional
@@ -160,8 +161,14 @@ def load_settings() -> Settings:
 
         # Realtime — Gemini Live
         google_api_key  = os.getenv("GOOGLE_API_KEY", ""),
-        gemini_model    = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-live-001"),
+        # Native-audio models auto-detect language and keep one consistent voice.
+        gemini_model    = os.getenv(
+            "GEMINI_MODEL",
+            "gemini-2.5-flash-native-audio-preview-12-2025",
+        ),
+        # Single consistent English (and multilingual) persona voice.
         gemini_voice    = os.getenv("GEMINI_VOICE", "Aoede"),
+        # Leave unset for auto-detect. Pinning en-US breaks Sinhala/Tamil.
         gemini_language = os.getenv("GEMINI_LANGUAGE") or None,
 
         # Traditional — STT

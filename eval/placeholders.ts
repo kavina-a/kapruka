@@ -73,6 +73,15 @@ Tap Add on a card or tell me which one.`;
     return `[MODE: CHAT] Strawberry birthday cake for your daughter — pulling a few options that deliver to Nugegoda.`;
   }
 
+  if (/dad|father/.test(priorUser)) {
+    return `[MODE: CHAT] Something for Dad — here are a few chocolate boxes that land well:
+
+**Java Super Dad 10 Piece Box** — Rs 3,000
+**Java I Love Dad 10 Piece Chocolate Box** — Rs 3,070
+
+What does he like more — something sweet or something practical?`;
+  }
+
   return `[MODE: CHAT] Got it — let me help with that.`;
 }
 

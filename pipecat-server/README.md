@@ -58,9 +58,12 @@ In the app, click **Call Ruka**. Default offer URL:
 |------|------|
 | `bot.py` | Pipecat runner entry (`pipecat.runner.run.main`) |
 | `config.py` | Env settings — all providers, all modes |
-| `persona.py` | Voice system instruction |
+| `persona.py` | Voice system instruction (language purity, demographics) |
+| `language.py` | Spoken-language detection + session language state |
 | `pipeline/service.py` | **PipelineService** — builds pipeline, RTVI, lifecycle |
+| `pipeline/language_sync.py` | Keeps STT / LLM / TTS language aligned mid-call |
 | `tools/mcp_tools.py` | MCP tool schemas → direct Kapruka MCP + RTVI UI push |
+| `tests/` | Language, persona, pipeline, and conversation-quality evals |
 
 ## Pipeline modes
 
@@ -75,13 +78,29 @@ In the app, click **Call Ruka**. Default offer URL:
 ```env
 PIPECAT_PIPELINE_MODE=realtime
 GOOGLE_API_KEY=...
-GEMINI_MODEL=gemini-2.0-flash-live-001   # default
-GEMINI_VOICE=Aoede                        # Aoede | Charon | Fenrir | Kore | Puck
-# GEMINI_LANGUAGE unset — auto-detect English / Sinhala / Tamil / Tanglish
-# Optional pin: GEMINI_LANGUAGE=si-LK | ta-IN | en-US
+GEMINI_MODEL=gemini-2.5-flash-native-audio-preview-12-2025
+GEMINI_VOICE=Aoede                        # single consistent voice for all languages
+# GEMINI_LANGUAGE must stay unset for auto-detect (English / Sinhala / Tamil / Tanglish)
+# Optional whole-process pin only: GEMINI_LANGUAGE=si-LK | ta-IN | en-US
 ```
 
+**Language behaviour**
+
+- Native-audio Gemini auto-detects spoken language; we pass `language=None` so Pipecat does **not** pin `en-US`.
+- One voice identity (`GEMINI_VOICE=Aoede`) for English, Sinhala, Tamil, and Tanglish — language switches, character does not.
+- Browser UI language (`en` / `si` / `ta`) is sent as `requestData.lang` on the WebRTC offer and used as a soft greeting preference only; spoken language still follows the caller.
+- Mid-call code-switches are mirrored fully on the next turn (no mixed-language replies). Traditional pipelines also retarget TTS language via `LanguageSyncProcessor`.
+
 Text chat Tamil uses **VALSEA** in the Next.js app (`VALSEA_API_KEY` in `.env.local`). Voice does not use VALSEA — Gemini Live handles all languages.
+
+### Tests
+
+```bash
+# From repo root
+npm run eval:voice:unit   # language detection, persona, pipeline settings (offline)
+npm run eval:voice:live   # conversation-quality scenarios (needs OPENAI_API_KEY)
+npm run eval:voice        # all of the above
+```
 
 ### English — ElevenLabs TTS
 

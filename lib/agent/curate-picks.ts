@@ -1,5 +1,4 @@
 import "server-only";
-import { google } from "@ai-sdk/google";
 import { generateObject } from "ai";
 import { z } from "zod";
 import type { Product } from "@/lib/commerce/types";
@@ -7,9 +6,7 @@ import type { GiftFinderState } from "@/lib/catalog/gift-finder-types";
 import { GIFT_RELATIONSHIPS_BY_ID } from "@/lib/catalog/gift-relationships";
 import { PERSONALITY_TRAITS_BY_ID } from "@/lib/catalog/personality-traits";
 import { findOccasion } from "@/lib/catalog/occasions";
-import { isGeminiConfigured } from "@/lib/agent/classify";
-
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+import { GEMINI_UTILITY_MODEL, isGeminiConfigured, withGeminiKeyFallback } from "@/lib/ai/gemini";
 
 function describeGiftFinderState(state: GiftFinderState): string {
   const rel = state.relationship ? GIFT_RELATIONSHIPS_BY_ID[state.relationship]?.label : "someone";
@@ -61,17 +58,19 @@ export async function curateGiftPicks(
   });
 
   try {
-    const { object } = await generateObject({
-      model: google(GEMINI_MODEL),
-      schema: dynamicSchema,
-      temperature: 0.4,
-      system:
-        "You curate gifts for a Sri Lankan shopper on Kapruka. Pick exactly 4–6 products " +
-        "from the list that best match the recipient profile. Each reason is one short, " +
-        "warm sentence starting with 'Because…' or similar — specific to their personality, " +
-        "never generic marketing fluff. Use only product ids from the list.",
-      prompt: `${describeGiftFinderState(state)}\n\nProducts:\n${JSON.stringify(catalog)}`,
-    });
+    const { object } = await withGeminiKeyFallback(GEMINI_UTILITY_MODEL, (model) =>
+      generateObject({
+        model,
+        schema: dynamicSchema,
+        temperature: 0.4,
+        system:
+          "You curate gifts for a Sri Lankan shopper on Kapruka. Pick exactly 4–6 products " +
+          "from the list that best match the recipient profile. Each reason is one short, " +
+          "warm sentence starting with 'Because…' or similar — specific to their personality, " +
+          "never generic marketing fluff. Use only product ids from the list.",
+        prompt: `${describeGiftFinderState(state)}\n\nProducts:\n${JSON.stringify(catalog)}`,
+      }),
+    );
 
     const byId = new Map(products.map((p) => [p.id, p]));
     const curated: Product[] = [];

@@ -131,6 +131,9 @@ export function stubToolResponse(
     case "setPriceAlert":
       return { ok: true, set: true };
 
+    case "showGiftFinder":
+      return { ok: true };
+
     default:
       return { ok: true, result: "ok" };
   }

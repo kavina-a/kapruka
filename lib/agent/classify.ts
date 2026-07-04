@@ -1,14 +1,10 @@
 import "server-only";
-import { google } from "@ai-sdk/google";
 import { generateObject } from "ai";
 import { z } from "zod";
 import type { GiftFinderState } from "@/lib/catalog/gift-finder-types";
+import { GEMINI_UTILITY_MODEL, isGeminiConfigured, withGeminiKeyFallback } from "@/lib/ai/gemini";
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
-
-export function isGeminiConfigured(): boolean {
-  return Boolean(process.env.GEMINI_API_KEY?.trim());
-}
+export { isGeminiConfigured };
 
 export type ChatIntent =
   | "gift_discovery"
@@ -34,20 +30,22 @@ export async function classifyIntent(text: string): Promise<ChatIntent | null> {
   if (!trimmed || !isGeminiConfigured()) return null;
 
   try {
-    const { object } = await generateObject({
-      model: google(GEMINI_MODEL),
-      schema: intentSchema,
-      temperature: 0,
-      system:
-        "Classify one customer message for a gift-shopping chat assistant. " +
-        "Reply with exactly one intent label — no explanation.\n" +
-        "gift_discovery: wants gift ideas / to browse / hasn't bought yet.\n" +
-        "refinement: tweaking an existing search — e.g. 'something cheaper', 'show more like this', 'no chocolates'.\n" +
-        "product_question: asking about a specific product's details, stock, or price.\n" +
-        "order_tracking: asking about an existing order's delivery status.\n" +
-        "other: greetings, small talk, anything else.",
-      prompt: trimmed,
-    });
+    const { object } = await withGeminiKeyFallback(GEMINI_UTILITY_MODEL, (model) =>
+      generateObject({
+        model,
+        schema: intentSchema,
+        temperature: 0,
+        system:
+          "Classify one customer message for a gift-shopping chat assistant. " +
+          "Reply with exactly one intent label — no explanation.\n" +
+          "gift_discovery: wants gift ideas / to browse / hasn't bought yet.\n" +
+          "refinement: tweaking an existing search — e.g. 'something cheaper', 'show more like this', 'no chocolates'.\n" +
+          "product_question: asking about a specific product's details, stock, or price.\n" +
+          "order_tracking: asking about an existing order's delivery status.\n" +
+          "other: greetings, small talk, anything else.",
+        prompt: trimmed,
+      }),
+    );
     return object.intent;
   } catch (err) {
     console.warn("[classify] intent classification failed:", err);
@@ -91,19 +89,21 @@ export async function interpretRefinement(
   if (!trimmed || !isGeminiConfigured()) return null;
 
   try {
-    const { object } = await generateObject({
-      model: google(GEMINI_MODEL),
-      schema: refinementPatchSchema,
-      temperature: 0,
-      system:
-        "The user is refining an already-run gift search. Given their current " +
-        "search state and a short follow-up message, return ONLY the fields that " +
-        "should change. Leave fields out entirely if the message doesn't mention them. " +
-        "Never invent traits or exclusions that aren't clearly implied by the message.",
-      prompt:
-        `Current state: ${JSON.stringify(currentState)}\n` +
-        `Follow-up message: "${trimmed}"`,
-    });
+    const { object } = await withGeminiKeyFallback(GEMINI_UTILITY_MODEL, (model) =>
+      generateObject({
+        model,
+        schema: refinementPatchSchema,
+        temperature: 0,
+        system:
+          "The user is refining an already-run gift search. Given their current " +
+          "search state and a short follow-up message, return ONLY the fields that " +
+          "should change. Leave fields out entirely if the message doesn't mention them. " +
+          "Never invent traits or exclusions that aren't clearly implied by the message.",
+        prompt:
+          `Current state: ${JSON.stringify(currentState)}\n` +
+          `Follow-up message: "${trimmed}"`,
+      }),
+    );
     return object;
   } catch (err) {
     console.warn("[classify] refinement interpretation failed:", err);

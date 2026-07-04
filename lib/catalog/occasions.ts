@@ -1,17 +1,3 @@
-// ---------------------------------------------------------------------------
-// Curated occasions / gift verticals.
-//
-// Kapruka's free-text search is brittle (a bare keyword often returns nothing),
-// but pairing a query with a category is far more reliable, and browsing the
-// category landing pages is rock solid. So discovery is anchored on these
-// curated occasions — which also happens to be the right product model: a gift
-// concierge thinks in occasions, not search terms ("curated discovery, not a
-// search box").
-//
-// `pageSlug` is the kapruka.com/online/<slug> landing page (used to harvest the
-// seed catalog). `mcpCategory` + `query` are the verified-reliable arguments to
-// kapruka_search_products. `keywords` drive free-text -> occasion inference.
-// ---------------------------------------------------------------------------
 
 export type OccasionKind = "occasion" | "type";
 
@@ -125,8 +111,9 @@ export const OCCASIONS: Occasion[] = [
     blurb: "When words run out, presence speaks. Tasteful, never flashy.",
     kind: "occasion",
     pageSlug: "sympathies",
-    mcpCategory: "sympathies",
-    query: "sympathy",
+    // "sympathies" category filter returns nothing for any query — use no-category search instead.
+    mcpCategory: "",
+    query: "sympathy flower",
     keywords: ["sympathy", "condolence", "condolences", "funeral", "loss", "passed away", "grief", "bereavement"],
   },
   {
@@ -212,6 +199,7 @@ export const OCCASIONS: Occasion[] = [
     mcpCategory: "Jewellery",
     query: "jewellery",
     keywords: ["jewellery", "jewelry", "necklace", "bracelet", "earrings", "ring", "pendant", "gold"],
+    fallbackOccasionIds: ["perfumes", "chocolates"],
   },
   {
     id: "toys",

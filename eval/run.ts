@@ -1,5 +1,5 @@
 /**
- * ChatRuka prompt eval runner — uses the same OpenAI model + system prompt as production.
+ * ChatRuka prompt eval runner — uses the same model + system prompt as production.
  *
  * Usage:
  *   npm run eval:chat
@@ -7,11 +7,12 @@
  *   npm run eval:chat -- --category cart
  *   npm run eval:chat -- --verbose
  *
- * Requires OPENAI_API_KEY in .env (loaded automatically).
+ * Model: Gemini with multi-key rotation (see lib/ai/gemini.ts).
+ * Requires GEMINI_API_KEY_1 / GEMINI_API_KEY_2 / … in .env.
  */
 
 import { config } from "dotenv";
-import { openai } from "@ai-sdk/openai";
+// import { openai } from "@ai-sdk/openai";
 import { generateText, stepCountIs, tool, type CoreMessage, type UIMessage } from "ai";
 import { z } from "zod";
 import * as fs from "fs";
@@ -19,17 +20,22 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 
 import { buildSystemPrompt } from "../lib/agent/persona";
+import { buildCommerceContextBlock } from "../lib/agent/commerce-context";
 import { inferModeFromHistory, resolveAgentMode } from "../lib/agent/modes";
 import { OCCASIONS } from "../lib/catalog/occasions";
+import { computeTurnFlags } from "../lib/agent/turn-flags";
+import { GEMINI_CHAT_MODEL, isGeminiConfigured, withGeminiKeyFallback } from "../lib/ai/gemini";
+import type { CommerceContext } from "../lib/commerce/types";
 import { gradeResponse } from "./grade";
 import { resolveTurns } from "./placeholders";
 import { stubToolResponse } from "./stubs";
 import type { Scenario, ScenarioResult, Turn } from "./types";
 
 config({ path: path.join(process.cwd(), ".env") });
+config({ path: path.join(process.cwd(), ".env.local"), override: true });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const MODEL = process.env.OPENAI_MODEL || "gpt-4o";
+const MODEL = GEMINI_CHAT_MODEL;
 const OCCASION_IDS = OCCASIONS.map((o) => o.id) as [string, ...string[]];
 
 const args = process.argv.slice(2);
@@ -74,6 +80,16 @@ function makeEvalTools(mode: "CHAT" | "TRACK") {
   }
 
   return {
+    showGiftFinder: tool({
+      description:
+        "Show the structured gift finder (relationship → personality → budget) when the buyer is stuck and has NO product preference. " +
+        "Trigger signals: 'idk', 'I don't know', 'no idea', 'surprise me', 'you pick', 'you choose', 'whatever', 'no clue'. " +
+        "Rules: (1) Do NOT call searchGifts in the same turn as this. (2) Do NOT call on the first user message. " +
+        "(3) Only call ONCE — if you already called it this session and the buyer is still unsure, call searchGifts with a fresh occasionId instead. " +
+        "Never search before they finish the picker chips.",
+      inputSchema: z.object({}),
+      execute: async () => stubToolResponse("showGiftFinder", {}),
+    }),
     searchGifts: tool({
       description: "Search for gifts to show as product cards",
       inputSchema: z.object({
@@ -209,27 +225,59 @@ async function runScenario(scenario: Scenario): Promise<ScenarioResult> {
   const switching =
     previousMode !== agentMode && resolvedTurns.at(-1)?.role === "user";
 
-  const system = buildSystemPrompt({}, agentMode, { switching, previousMode });
+  // Mirrors app/api/chat/route.ts exactly (via the shared lib/agent/turn-flags
+  // module) so the eval suite actually exercises the uncertainty/rejection
+  // "force the model's hand" prompt injection — not just the base persona
+  // prompt. This is what makes picker-triggering regressions catchable here.
+  const commerceContext: CommerceContext | null = scenario.gift_finder_already_complete
+    ? ({
+        cart: [],
+        subtotal: 0,
+        delivery: {},
+        sender: {},
+        giftMessage: "",
+        giftMessageSource: null,
+        chatCheckoutStep: null,
+        giftFinderState: {
+          relationship: "father",
+          occasionId: null,
+          personalityTraits: ["practical"],
+          budgetTier: null,
+          exclusions: [],
+        },
+      } as CommerceContext)
+    : null;
+  const { uncertaintyBlock, rejectionBlock, giftFinderSubmitBlock } = computeTurnFlags(uiMessages, commerceContext);
+  const commerceBlock = commerceContext ? `\n\n${buildCommerceContextBlock(commerceContext)}` : "";
+
+  const system =
+    buildSystemPrompt({}, agentMode, { switching, previousMode }) +
+    commerceBlock +
+    uncertaintyBlock +
+    rejectionBlock +
+    giftFinderSubmitBlock;
   const messages = turnsToCoreMessages(resolvedTurns);
   const tools = makeEvalTools(agentMode);
 
   const toolCallsMade: string[] = [];
   const toolInputs: Record<string, Record<string, unknown>> = {};
 
-  const result = await generateText({
-    model: openai(MODEL),
-    system,
-    messages,
-    tools,
-    stopWhen: stepCountIs(6),
-    temperature: 0.7,
-    onStepFinish: ({ toolCalls: calls }) => {
-      for (const call of calls) {
-        toolCallsMade.push(call.toolName);
-        toolInputs[call.toolName] = call.input as Record<string, unknown>;
-      }
-    },
-  });
+  const result = await withGeminiKeyFallback(MODEL, (model) =>
+    generateText({
+      model,
+      system,
+      messages,
+      tools,
+      stopWhen: stepCountIs(6),
+      temperature: 0.7,
+      onStepFinish: ({ toolCalls: calls }) => {
+        for (const call of calls) {
+          toolCallsMade.push(call.toolName);
+          toolInputs[call.toolName] = call.input as Record<string, unknown>;
+        }
+      },
+    }),
+  );
 
   const finalText = result.text;
   const grades = gradeResponse(scenario, finalText, toolCallsMade, toolInputs);
@@ -309,8 +357,8 @@ function printReport(results: ScenarioResult[]) {
 }
 
 async function main() {
-  if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.includes("REPLACE_ME")) {
-    console.error("OPENAI_API_KEY is missing. Set it in .env before running eval.");
+  if (!isGeminiConfigured()) {
+    console.error("No Gemini API keys configured. Set GEMINI_API_KEY_1 (or GEMINI_API_KEY) in .env before running eval.");
     process.exit(1);
   }
 
