@@ -8,6 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import type { GiftFinderState } from "@/lib/catalog/gift-finder-types";
+import type { DetectedFlags } from "@/lib/agent/detect-flags";
 
 export type CurrencyCode = "LKR" | "USD" | "GBP" | "EUR" | "AUD" | "CAD";
 
@@ -170,6 +171,8 @@ export interface CommerceContext {
   clientId?: string;
   /** Structured signals captured by the gift-finder chip flow, when used this session. */
   giftFinderState?: GiftFinderState | null;
+  /** High-confidence flags detected client-side before the API call. */
+  detectedFlags?: DetectedFlags;
 }
 
 /** A lightweight order record persisted to Neon after each confirmed order. */

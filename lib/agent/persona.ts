@@ -3,6 +3,7 @@ import { formatCalendarFactsBlock } from "@/lib/commerce/calendar";
 import { colomboToday, colomboTodayHuman, addDays, formatHumanDate } from "@/lib/commerce/dates";
 import { OCCASIONS } from "@/lib/catalog/occasions";
 import type { UserProfile } from "@/lib/commerce/store";
+import type { DetectedFlags } from "@/lib/agent/detect-flags";
 import promptChatSpec from "@/docs/prompt-chat.json";
 
 export const RUKA = {
@@ -182,4 +183,78 @@ export function buildSystemPrompt(
 ): string {
   const base = mode === "TRACK" ? buildTrackSystemPrompt(profile) : buildChatSystemPrompt(profile);
   return `${modeRulesBlock(mode, options?.switching ?? false, options?.previousMode)}\n\n${base}`;
+}
+
+/**
+ * Builds a per-turn directive block from high-confidence client-side flags.
+ * Injected at the very end of the system prompt — recency keeps it fresh in
+ * the model's attention window. Returns empty string when no flags are set.
+ *
+ * @param userTurns - How many user messages exist so far this conversation.
+ * The classifier re-evaluates every message independently with no memory, so
+ * on turn 2+ a self_purchase label doesn't tell us whether this is a NEW
+ * ambiguous request or the buyer's ANSWER to a clarifying question we already
+ * asked (e.g. "spicy" → we ask "hot sauce or a snack?" → they reply "hot
+ * sauce" → classifier says self_purchase again with no productSignal). Only
+ * command "ask a question" on the buyer's first message; after that, defer to
+ * the model reading its own prior turn from history instead of re-issuing the
+ * same instruction and looping.
+ */
+export function buildSituationalDirective(
+  flags: DetectedFlags | undefined,
+  userTurns = 1,
+): string {
+  if (
+    !flags ||
+    (!flags.selfPurchase && !flags.searchNow && !flags.productSignal && !flags.unclearContext)
+  ) {
+    return "";
+  }
+
+  const lines: string[] = [
+    "",
+    "## THIS TURN — DIRECTIVE (highest priority, overrides all rules below)",
+  ];
+
+  if (flags.selfPurchase && flags.productSignal) {
+    lines.push(
+      `⚠️ SELF_PURCHASE + PRODUCT SIGNAL DETECTED`,
+      `The buyer is making a **personal purchase** and wants **"${flags.productSignal}"**.`,
+      `- NEVER ask "who is this for?" — it is for them.`,
+      `- Call \`searchGifts\` immediately this turn — do NOT ask a clarifying question.`,
+      `- YOU decide the best \`occasionId\` from Kapruka's catalogue. Do NOT use the product signal text directly as \`occasionId\` — pick the vertical that actually stocks this product.`,
+      `- Example: "hot sauce" → NOT occasionId:'fruit' (that is the fruit-basket vertical). Think: does Kapruka have a condiments/grocery vertical? If not, admit the product may not be available rather than showing unrelated items.`,
+      `- If search returns results with matchQuality:'related' that share zero attributes with what was asked — do not show them. Apply the catalogue mismatch rule.`,
+    );
+  } else if (flags.selfPurchase && userTurns <= 1) {
+    lines.push(
+      `The buyer is making a **personal purchase** (not a gift) — self_purchase detected.`,
+      `- NEVER ask "who is this for?", "what's the occasion?", or assume a recipient.`,
+      `- If a specific product type is clear, call \`searchGifts\` immediately with that occasionId.`,
+      `- If the product they described is vague or doesn't map to a clear Kapruka category (e.g. "something spicy", "something sweet") — do NOT guess a category. Ask ONE short question about the PRODUCT itself, e.g. "Spicy how — a hot sauce, a chilli paste, or a spicy snack box?" Never guess "chocolates" as a fallback.`,
+    );
+  } else if (flags.selfPurchase) {
+    lines.push(
+      `The buyer is making a **personal purchase** (not a gift) — self_purchase detected, and this is NOT their first message this session.`,
+      `- NEVER ask "who is this for?" or assume a recipient.`,
+      `- Check your OWN previous message in the conversation history: if you already asked them what specific product they want, THIS message is very likely their answer — even a short one like "hot sauce" or "just a snack" IS the product. Call \`searchGifts\` immediately using their words as the query (occasionId only if it clearly maps to a Kapruka category — e.g. 'fruit' for a hamper/food vertical — otherwise omit occasionId and rely on query text). Do NOT ask the same clarifying question again — that creates a frustrating loop.`,
+      `- Only ask another question if their reply is STILL genuinely vague ("idk", "anything", "you pick") — in that case treat it like Case B (see showGiftFinder rules) instead of repeating yourself.`,
+    );
+  } else if (flags.productSignal && flags.searchNow) {
+    lines.push(
+      `A clear product type was detected: **"${flags.productSignal}"**.`,
+      `- Call \`searchGifts\` immediately — do NOT ask a clarifying question about what product they want.`,
+      `- YOU decide the best \`occasionId\` from Kapruka's catalogue. Do NOT use the signal text directly as \`occasionId\` — pick the vertical that actually stocks this product.`,
+      `- If no recipient is known, ask ONE warm lean-in after the cards appear.`,
+    );
+  } else if (flags.unclearContext) {
+    lines.push(
+      `This message has **no recipient, no occasion, no gift language, and no concrete product signal** — genuinely ambiguous (unclear_context detected).`,
+      `- Do NOT call \`searchGifts\` — there is nothing real to search for yet, and guessing a category (e.g. defaulting to chocolates) is forbidden.`,
+      `- Do NOT call \`showGiftFinder\` yet — that tool is for CONFIRMED gift intent with uncertainty, not for messages where gift intent itself is unconfirmed.`,
+      `- Ask ONE short, warm question that clarifies what they want or who it's for — e.g. "Are you shopping for yourself or someone else?" Do not assume either way.`,
+    );
+  }
+
+  return lines.join("\n");
 }

@@ -1,27 +1,25 @@
-// OpenAI is temporarily disabled (billing quota exhausted).
-// Groq free tier caps at 12K tokens/request — our prompt+tools are ~15K, so it
-// can't run chat at all. Gemini handles the full context; multi-key rotation in
-// lib/ai/gemini.ts spreads free-tier rate limits across keys.
-// import { openai } from "@ai-sdk/openai";
-// import { groqModel, GROQ_CHAT_MODEL } from "@/lib/ai/groq";
+// Default provider: OpenAI gpt-4o-mini when OPENAI_API_KEY is set.
 import {
   convertToModelMessages,
   stepCountIs,
   streamText,
   type UIMessage,
 } from "ai";
-import { buildSystemPrompt } from "@/lib/agent/persona";
+import { buildSystemPrompt, buildSituationalDirective } from "@/lib/agent/persona";
 import { buildCommerceContextBlock } from "@/lib/agent/commerce-context";
 import { createRukaTools } from "@/lib/agent/tools";
 import { getLatestUserText, inferModeFromHistory, isModeAmbiguous, resolveAgentMode } from "@/lib/agent/modes";
 import { classifyIntent } from "@/lib/agent/classify";
 import { computeTurnFlags } from "@/lib/agent/turn-flags";
 import {
-  GEMINI_CHAT_MODEL,
-  geminiModelWithKey,
-  getGeminiApiKeys,
-  isGeminiConfigured,
-  isGeminiQuotaError,
+  getChatModel,
+  getChatModelId,
+  getChatProvider,
+  isAnyLLMConfigured,
+  isProviderQuotaError,
+  providerLogMeta,
+} from "@/lib/ai/provider";
+import {
   markGeminiKeyFailed,
   selectGeminiKey,
 } from "@/lib/ai/gemini";
@@ -38,8 +36,8 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// const MODEL = process.env.OPENAI_MODEL || "gpt-4o"; // OpenAI — re-enable when quota is back
-const MODEL = GEMINI_CHAT_MODEL;
+// const MODEL = process.env.OPENAI_MODEL || "gpt-4o"; // legacy override
+const MODEL = getChatModelId();
 
 export async function POST(req: Request) {
   const traceId = req.headers.get("x-trace-id") ?? newTraceId("chat");
@@ -62,17 +60,15 @@ export async function POST(req: Request) {
     { traceId, channel: "chat", clientId: commerceContext?.clientId },
     async () => {
 
-      if (!isGeminiConfigured()) {
+      if (!isAnyLLMConfigured()) {
         return new Response(
           JSON.stringify({
             error:
-              "ChatRuka isn't connected to a brain yet — set GEMINI_API_KEY_1 (or GEMINI_API_KEY) in your environment to start chatting.",
+              "ChatRuka isn't connected to a brain yet — set OPENAI_API_KEY (recommended) or GEMINI_API_KEY_1 in your environment.",
           }),
           { status: 503, headers: { "content-type": "application/json" } },
         );
       }
-
-      const commerceBlock = commerceContext ? `\n\n${buildCommerceContextBlock(commerceContext)}` : "";
 
       const previousMode = inferModeFromHistory(messages);
       let agentMode = resolveAgentMode(messages);
@@ -90,7 +86,14 @@ export async function POST(req: Request) {
       }
 
       const switching = previousMode !== agentMode;
+      const isChatMode = agentMode === "CHAT";
+      const userTurns = messages.filter((m) => m.role === "user").length;
 
+      // All of the blocks below (cart/checkout snapshot, uncertainty/rejection/gift-finder
+      // nudges, VALSEA search-intent enrichment, situational directive) exist purely to
+      // steer gift search & checkout — none of it is relevant once we're in TRACK mode.
+      // Skipping them here isn't just a token saving on the prompt itself: it also skips
+      // the VALSEA enrichment's external API calls entirely for tracking turns.
       const {
         lastUserText,
         uncertaintyTurn,
@@ -99,26 +102,63 @@ export async function POST(req: Request) {
         uncertaintyBlock,
         rejectionBlock,
         giftFinderSubmitBlock,
-      } = computeTurnFlags(messages, commerceContext);
+      } = isChatMode
+        ? computeTurnFlags(messages, commerceContext)
+        : {
+            lastUserText: getLatestUserText(messages) || null,
+            uncertaintyTurn: false,
+            rejectionTurn: false,
+            giftFinderSubmitTurn: false,
+            uncertaintyBlock: "",
+            rejectionBlock: "",
+            giftFinderSubmitBlock: "",
+          };
 
-      const geminiKey = selectGeminiKey();
+      const commerceBlock =
+        isChatMode && commerceContext ? `\n\n${buildCommerceContextBlock(commerceContext)}` : "";
+
+      const providerMeta = providerLogMeta();
+      const geminiKey =
+        providerMeta.provider === "gemini" ? selectGeminiKey() : null;
+
+      // Merge client-side keyword flags (selfPurchase/productSignal, high-confidence
+      // only) with the cheap classifier's verdict (self_purchase/unclear, which catches
+      // the ambiguous cases keyword-matching deliberately skips, e.g. "something spicy").
+      // Without this merge, classifiedIntent was computed but never actually reached the
+      // model — it only flipped agentMode for order_tracking — so the priority stack had
+      // no signal to act on and the model fell through to guessing a category.
+      const effectiveFlags = isChatMode ? { ...(commerceContext?.detectedFlags ?? {}) } : {};
+      if (isChatMode) {
+        if (classifiedIntent === "self_purchase" && !effectiveFlags.selfPurchase) {
+          effectiveFlags.selfPurchase = true;
+        } else if (
+          classifiedIntent === "unclear" &&
+          !effectiveFlags.selfPurchase &&
+          !effectiveFlags.searchNow
+        ) {
+          effectiveFlags.unclearContext = true;
+        }
+      }
 
       agentLog("chat.turn.start", {
         traceId,
         clientId: commerceContext?.clientId,
+        provider: providerMeta.provider,
         model: MODEL,
-        geminiKeyPool: getGeminiApiKeys().length,
-        geminiKeyHint: `…${geminiKey.slice(-6)}`,
+        geminiKeyPool: providerMeta.geminiKeyPool,
+        geminiKeyHint: geminiKey ? `…${geminiKey.slice(-6)}` : undefined,
         agentMode,
         previousMode,
         switching,
-        userTurns: messages.filter((m) => m.role === "user").length,
+        userTurns,
         lastUserText: lastUserText?.slice(0, 200),
         flags: {
           uncertaintyTurn,
           rejectionTurn,
           giftFinderSubmitTurn,
           classifiedIntent,
+          detectedFlags: commerceContext?.detectedFlags ?? null,
+          effectiveFlags,
         },
         cartItems: commerceContext?.cart.length ?? 0,
         shownProducts: commerceContext?.shownProducts?.length ?? 0,
@@ -129,20 +169,28 @@ export async function POST(req: Request) {
         ),
       });
 
-      const valseaEnrichment = lastUserText
-        ? await enrichUserMessage(lastUserText, uiLang)
-        : null;
+      const valseaEnrichment =
+        isChatMode && lastUserText ? await enrichUserMessage(lastUserText, uiLang) : null;
       const valseaBlock = valseaEnrichment ? buildValseaContextBlock(valseaEnrichment) : "";
 
+      // Combined client + classifier flags → per-turn directive injected last so
+      // it's freshest in the model's attention window. CHAT only — see isChatMode above.
+      // userTurns lets the directive tell "first ambiguous message" apart from
+      // "answer to a clarifying question we already asked" (see buildSituationalDirective).
+      const directiveBlock = isChatMode
+        ? buildSituationalDirective(effectiveFlags, userTurns)
+        : "";
+
       const result = streamText({
-        model: geminiModelWithKey(MODEL, geminiKey),
+        model: getChatModel(),
         system:
           buildSystemPrompt(userProfile, agentMode, { switching, previousMode }) +
           commerceBlock +
           uncertaintyBlock +
           rejectionBlock +
           giftFinderSubmitBlock +
-          valseaBlock,
+          valseaBlock +
+          directiveBlock,
         messages: await convertToModelMessages(messages),
         tools: createRukaTools(commerceContext, agentMode),
         // Allow several tool round-trips (search -> details -> delivery) per turn.
@@ -176,9 +224,12 @@ export async function POST(req: Request) {
         onError: (error) => {
           const err = error as { error?: { message?: string; code?: string } };
           agentLog("chat.stream.error", { error: String(error) }, "error");
-          if (isGeminiQuotaError(error)) {
-            markGeminiKeyFailed(geminiKey);
-            return "Gemini rate limit hit on this key — please try again (the next request will use a different key).";
+          if (isProviderQuotaError(error)) {
+            if (getChatProvider() === "gemini" && geminiKey) {
+              markGeminiKeyFailed(geminiKey);
+              return "Gemini rate limit hit on this key — please try again (the next request will use a different key).";
+            }
+            return "OpenAI rate limit or quota hit — please try again in a moment.";
           }
           if (err?.error?.code === "server_error") {
             return "The model had a brief hiccup — please try sending that again.";

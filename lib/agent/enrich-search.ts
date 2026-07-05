@@ -51,7 +51,9 @@ export async function searchGiftsWithRecipientContext(
   const vertical = (input.occasionId ?? "").toLowerCase();
   const isPerfumeVertical = vertical === "perfumes" || vertical === "perfume";
 
-  if (products.length < Math.min(3, limit) && audience !== "neutral" && isPerfumeVertical) {
+  // Skip the retry sequence if the initial search was rate-limited — subsequent
+  // calls will hit the same wall and only add latency.
+  if (products.length < Math.min(3, limit) && audience !== "neutral" && isPerfumeVertical && !res.rateLimited) {
     const retrySequence =
       audience === "male"
         ? ["men perfume", "cologne for men", "men fragrance", "men body spray"]

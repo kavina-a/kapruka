@@ -64,6 +64,12 @@ export interface SearchGiftsResult {
   matchQuality?: "exact" | "related" | "category";
   /** What we actually searched (for agent mirroring). */
   searchedFor?: string;
+  /**
+   * True when the search was blocked by the MCP rate limit. Products will be
+   * empty — the caller should surface a rate_limited error to the model rather
+   * than falling back to seed (showing unrelated items is worse than honesty).
+   */
+  rateLimited?: boolean;
 }
 
 function resolveOccasion(input: SearchGiftsInput): Occasion | null {
@@ -84,6 +90,12 @@ function resolveOccasion(input: SearchGiftsInput): Occasion | null {
 interface SearchAttempt {
   q: string;
   category?: string;
+}
+
+interface LiveAttemptsResult {
+  products: Product[];
+  transportFailed: boolean;
+  rateLimited: boolean;
 }
 
 function buildAttempts(input: SearchGiftsInput, occasion: Occasion | null, productQuery: string): SearchAttempt[] {
@@ -118,8 +130,9 @@ async function runLiveAttempts(
   attempts: SearchAttempt[],
   input: SearchGiftsInput,
   label = "primary",
-): Promise<{ products: Product[]; transportFailed: boolean }> {
+): Promise<LiveAttemptsResult> {
   let transportFailed = false;
+  let rateLimited = false;
   agentLog("search.attempts", { label, attempts }, "debug");
   for (const attempt of attempts) {
     try {
@@ -131,16 +144,20 @@ async function runLiveAttempts(
         count ? "info" : "debug",
       );
       if (count) {
-        return { products: res!.results.map((r) => toProduct(r, [])), transportFailed: false };
+        return { products: res!.results.map((r) => toProduct(r, [])), transportFailed: false, rateLimited: false };
       }
     } catch (err) {
       transportFailed = true;
+      if (err instanceof KaprukaTransportError && err.status === 429) {
+        rateLimited = true;
+      }
       agentLog(
         "search.attempt_error",
         {
           label,
           q: attempt.q,
           category: attempt.category ?? null,
+          rateLimited,
           error: err instanceof Error ? err.message : String(err),
         },
         "warn",
@@ -148,7 +165,7 @@ async function runLiveAttempts(
       break;
     }
   }
-  return { products: [], transportFailed };
+  return { products: [], transportFailed, rateLimited };
 }
 
 async function liveSearch(
@@ -219,7 +236,7 @@ export async function searchGifts(input: SearchGiftsInput): Promise<SearchGiftsR
   });
 
   const primaryAttempts = buildAttempts(searchInput, occasion, effectiveQuery);
-  let { products, transportFailed } = await runLiveAttempts(primaryAttempts, searchInput, "primary");
+  let { products, transportFailed, rateLimited } = await runLiveAttempts(primaryAttempts, searchInput, "primary");
 
   if (products.length) {
     products = filterOffSeasonProducts(products).map((p) => ({
@@ -246,6 +263,22 @@ export async function searchGifts(input: SearchGiftsInput): Promise<SearchGiftsR
   // verticals (chocolates + perfumes + a hamper), not eight chocolate boxes.
   // Only when the buyer named a specific product (effectiveQuery set) do we
   // stay narrow, since then diversity would dilute an otherwise exact match.
+  // Rate limit hit — return immediately. Do NOT fall through to seed or expansion
+  // since showing unrelated items is misleading and breaks trust more than honesty.
+  if (rateLimited) {
+    return logSearchComplete(
+      {
+        products: [],
+        source: "live",
+        occasion: occasionMeta,
+        matchQuality: undefined,
+        searchedFor: effectiveQuery,
+        rateLimited: true,
+      },
+      "rate_limited",
+    );
+  }
+
   if (!products.length && occasion?.fallbackOccasionIds?.length) {
     const occasionQuery = occasion.query;
     const usedCategories: string[] = [];
@@ -288,13 +321,15 @@ export async function searchGifts(input: SearchGiftsInput): Promise<SearchGiftsR
     }
   }
 
-  if (needsFallback && effectiveQuery) {
+  // Only expand with alternative queries when live search is reachable — if the
+  // primary attempts hit a transport error, extra queries will too.
+  if (needsFallback && effectiveQuery && !transportFailed) {
     const relatedQueries = expandRelatedQueries(effectiveQuery, input.alternativeQueries).slice(0, 5);
     for (const altQuery of relatedQueries) {
       if (altQuery.toLowerCase() === effectiveQuery.toLowerCase()) continue;
       const altAttempts = buildAttempts({ ...searchInput, query: altQuery }, occasion, altQuery);
       const alt = await runLiveAttempts(altAttempts, { ...searchInput, query: altQuery }, `expand:${altQuery}`);
-      if (alt.transportFailed) transportFailed = true;
+      if (alt.transportFailed) { transportFailed = true; if (alt.rateLimited) rateLimited = true; break; }
       if (alt.products.length) {
         const tagged = filterOffSeasonProducts(alt.products).map((p) => ({
           ...p,

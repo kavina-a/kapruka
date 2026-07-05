@@ -17,7 +17,7 @@ import { colomboToday } from "@/lib/commerce/dates";
 import type { CommerceContext } from "@/lib/commerce/types";
 import type { AgentMode } from "@/lib/agent/modes";
 import type { GiftFinderState } from "@/lib/catalog/gift-finder-types";
-import { interpretRefinement, isGeminiConfigured } from "@/lib/agent/classify";
+import { interpretRefinement } from "@/lib/agent/classify";
 import { applyGiftFinderToSearchInput } from "@/lib/agent/apply-gift-finder-search";
 import { searchGiftsWithRecipientContext } from "@/lib/agent/enrich-search";
 import { curateGiftPicks } from "@/lib/agent/curate-picks";
@@ -143,6 +143,7 @@ function makeSearchGiftsTool(giftFinderState?: GiftFinderState | null) {
     description:
       "Find products to show as image cards.\n\n" +
       "Kapruka search = product vertical (occasionId) × product keywords (query). Recipient/occasion → shopperNote ONLY.\n\n" +
+      "⚠️ BEFORE ANYTHING ELSE — ambiguity check: if there is NO recipient, NO occasion, AND the product word itself doesn't map to a clear category ('spicy', 'something nice', 'a treat', 'something good') — do NOT call this tool. Ask one short question about the product first. RULE B below (guess the vertical) only applies when a recipient or occasion IS known but the product isn't — it does NOT license guessing a category for a vague self-purchase word. Guessing occasionId:'chocolates' for an unrelated word like 'spicy' is the most common quality failure — never do it.\n\n" +
       "RULE A — product type stated → use PRODUCT VERTICAL as occasionId:\n" +
       "  'perfume for dad' → occasionId:'perfumes', query:'men cologne', shopperNote:'A cologne for Dad'\n" +
       "  'chocolates for mum' → occasionId:'chocolates', shopperNote:'Something sweet for Mum'\n" +
@@ -247,6 +248,18 @@ function makeSearchGiftsTool(giftFinderState?: GiftFinderState | null) {
           pickReasons = curated.pickReasons;
         } else {
           products = products.slice(0, isSubstitution ? 3 : 8);
+        }
+
+        // Rate limit — stop here. Returning seed results as a substitute when
+        // search is down is misleading; the model should tell the user honestly.
+        if (res.rateLimited) {
+          const rateLimitedPayload = {
+            ok: false as const,
+            error: "rate_limited" as const,
+            message: "Search is temporarily unavailable due to rate limiting.",
+          };
+          agentLog("tool.result", summarizeToolResult("searchGifts", rateLimitedPayload), "warn");
+          return rateLimitedPayload;
         }
 
         const payload = {
@@ -687,7 +700,7 @@ export function createRukaTools(
     addToCart: makeAddToCartTool(commerceContext?.shownProducts),
     removeFromCart: makeRemoveFromCartTool(cartItems),
     setPriceAlert: makeSetPriceAlertTool(commerceContext?.clientId),
-    ...(commerceContext?.giftFinderState && isGiftFinderComplete(commerceContext.giftFinderState) && isGeminiConfigured()
+    ...(commerceContext?.giftFinderState && isGiftFinderComplete(commerceContext.giftFinderState)
       ? { refineGiftFinder: makeRefineGiftFinderTool(commerceContext.giftFinderState) }
       : {}),
   };

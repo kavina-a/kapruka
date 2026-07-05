@@ -37,6 +37,7 @@ import {
 import { applyGiftFinderRefinement, buildGiftFinderMessage, extractGiftFinderHintsFromMessages, isGiftFinderUncertainty, type GiftFinderRefinementPatch } from "@/lib/chat/gift-finder";
 import { isGiftFinderComplete } from "@/lib/catalog/gift-finder-types";
 import type { GiftFinderState } from "@/lib/catalog/gift-finder-types";
+import { detectHighConfidenceFlags } from "@/lib/agent/detect-flags";
 import { syncVoiceGiftFinderState } from "@/lib/voice/sync-gift-finder";
 import type { UIMessage } from "ai";
 
@@ -484,6 +485,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           useCommerce.getState().openGiftFinder();
           return;
         }
+
+        // Detect high-confidence signals client-side (zero cost) and inject
+        // as detectedFlags into the context block the server reads next turn.
+        const detectedFlags = detectHighConfidenceFlags(trimmed);
+        commerceContextRef.current = {
+          ...commerceContextRef.current,
+          detectedFlags: Object.keys(detectedFlags).length ? detectedFlags : undefined,
+        };
+
         chat.sendMessage({ text: trimmed });
       },
       submitGiftFinderPicks: (state: GiftFinderState) => {

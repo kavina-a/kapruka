@@ -58,7 +58,7 @@ export function markGeminiKeyFailed(apiKey: string, cooldownMs = KEY_COOLDOWN_MS
   keyCooldownUntil.set(keyFingerprint(apiKey), Date.now() + cooldownMs);
 }
 
-/** True when Gemini returned 429 / quota / rate-limit style errors. */
+/** True when Gemini returned 429 / quota / rate-limit style errors, or a transient 503 overload. */
 export function isGeminiQuotaError(error: unknown): boolean {
   const msg = String(error).toLowerCase();
   return (
@@ -67,7 +67,13 @@ export function isGeminiQuotaError(error: unknown): boolean {
     msg.includes("rate_limit") ||
     msg.includes("resource_exhausted") ||
     msg.includes("429") ||
-    msg.includes("too many requests")
+    msg.includes("too many requests") ||
+    // Transient "model overloaded" 503s — not a quota issue, but still worth
+    // rotating to another key/request rather than failing the whole turn.
+    msg.includes("503") ||
+    msg.includes("unavailable") ||
+    msg.includes("high demand") ||
+    msg.includes("overloaded")
   );
 }
 

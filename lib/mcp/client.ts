@@ -101,8 +101,14 @@ function extractText(res: unknown): string | undefined {
 }
 
 function isRateLimited(err: unknown): boolean {
+  if (err instanceof KaprukaTransportError && err.status === 429) return true;
   const msg = err instanceof Error ? err.message : String(err);
   return /429|rate.?limit|too many requests/i.test(msg);
+}
+
+/** True when the MCP response TEXT itself signals a rate limit (HTTP 200 with error body). */
+function isRateLimitText(text: string): boolean {
+  return /rate.?limit|too many requests/i.test(text);
 }
 
 /**
@@ -139,6 +145,12 @@ export async function callToolText(
       if (typeof text !== "string") {
         throw new KaprukaTransportError(`Unexpected MCP response from ${name}`);
       }
+      // The MCP may return HTTP 200 with a rate-limit message body. Treat it as
+      // a hard transport error — do not cache it, do not retry, surface it clearly.
+      if (isRateLimitText(text)) {
+        agentLog("mcp.rate_limited", { tool: name, params: summarizeMcpParams(params), ms: Date.now() - started, preview: text.slice(0, 120) }, "warn");
+        throw new KaprukaTransportError("Kapruka is busy right now (rate limit).", 429);
+      }
       if (ttlMs > 0) setCached(key, text, ttlMs);
       agentLog("mcp.call_ok", {
         tool: name,
@@ -162,11 +174,13 @@ export async function callToolText(
         },
         attempt < retries ? "warn" : "error",
       );
+      // Rate limits won't clear in seconds — stop immediately instead of burning
+      // retry budget on a wall that won't move.
+      if (isRateLimited(err)) break;
       // Connection may be stale; force a fresh handshake next attempt.
       resetClient();
       if (attempt < retries) {
-        const base = isRateLimited(err) ? 1500 : 350;
-        await sleep(base * Math.pow(2, attempt) + Math.random() * 200);
+        await sleep(350 * Math.pow(2, attempt) + Math.random() * 200);
       }
     }
   }
