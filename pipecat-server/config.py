@@ -1,10 +1,17 @@
 """Environment configuration for the ChatRuka Pipecat server.
 
-Two pipeline modes, each with swappable providers:
+Three pipeline modes, each with swappable providers:
 
     REALTIME (default) — Gemini Live speech-to-speech
         • Multilingual: English, Sinhala, Tamil, Tanglish (leave GEMINI_LANGUAGE unset)
         • Optional pin: GEMINI_LANGUAGE=si-LK | ta-IN | en-US
+
+    OPENAI_REALTIME — OpenAI Realtime speech-to-speech
+        • English only (OpenAI Realtime API does not auto-detect non-English)
+        • No separate STT or TTS — the model streams audio end-to-end
+        • Voice: alloy | echo | fable | onyx | nova | shimmer
+        • OPENAI_REALTIME_MODEL: gpt-4o-mini-realtime-preview (default, cheapest)
+          or gpt-4o-realtime-preview for higher quality
 
     TRADITIONAL — STT → LLM → TTS
         • English: ElevenLabs TTS (VOICE_PROFILE=english) or Cartesia / OpenAI
@@ -20,6 +27,12 @@ Quick recipes (copy to .env and fill in API keys):
     GEMINI_MODEL=gemini-2.5-flash-native-audio-preview-12-2025
     GEMINI_VOICE=Aoede
     # GEMINI_LANGUAGE unset → auto language detection (do NOT pin en-US)
+
+    # OpenAI Realtime — English speech-to-speech (no ElevenLabs/Cartesia needed)
+    PIPECAT_PIPELINE_MODE=openai_realtime
+    OPENAI_API_KEY=...
+    OPENAI_TTS_VOICE=nova          # alloy | echo | fable | onyx | nova | shimmer
+    OPENAI_REALTIME_MODEL=gpt-4o-mini-realtime-preview
 
     # Traditional — English with ElevenLabs TTS
     PIPECAT_PIPELINE_MODE=traditional
@@ -46,8 +59,9 @@ load_dotenv(override=True)
 # ---------------------------------------------------------------------------
 
 class PipelineMode(str, Enum):
-    REALTIME    = "realtime"     # Gemini Live speech-to-speech (default)
-    TRADITIONAL = "traditional"  # STT + LLM + TTS
+    REALTIME        = "realtime"        # Gemini Live speech-to-speech (multilingual)
+    OPENAI_REALTIME = "openai_realtime" # OpenAI Realtime speech-to-speech (English)
+    TRADITIONAL     = "traditional"     # STT + LLM + TTS
 
 
 class VoiceProfile(str, Enum):
@@ -96,6 +110,9 @@ class Settings:
     stt_provider:    STTProvider
     stt_model:       str           # whisper-1 | nova-2-general | etc.
     deepgram_api_key: str | None
+
+    # ── OpenAI Realtime (speech-to-speech) ──────────────────────────────────
+    openai_realtime_model: str  # gpt-4o-mini-realtime-preview | gpt-4o-realtime-preview
 
     # ── Traditional: LLM ────────────────────────────────────────────────────
     llm_provider:    LLMProvider
@@ -175,6 +192,11 @@ def load_settings() -> Settings:
         stt_provider     = _enum(STTProvider, os.getenv("STT_PROVIDER"), STTProvider.OPENAI),
         stt_model        = os.getenv("STT_MODEL", "whisper-1"),
         deepgram_api_key = os.getenv("DEEPGRAM_API_KEY") or None,
+
+        # OpenAI Realtime
+        openai_realtime_model = os.getenv(
+            "OPENAI_REALTIME_MODEL", "gpt-4o-mini-realtime-preview"
+        ),
 
         # Traditional — LLM
         llm_provider = _enum(LLMProvider, os.getenv("LLM_PROVIDER"), LLMProvider.OPENAI),

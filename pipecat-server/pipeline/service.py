@@ -1,9 +1,10 @@
 """PipelineService — builds and runs one voice session.
 
-Supports two modes (set via PIPECAT_PIPELINE_MODE):
+Supports three modes (set via PIPECAT_PIPELINE_MODE):
 
-  realtime    — Gemini Live speech-to-speech (English / Sinhala / Tamil / Tanglish)
-  traditional — STT → LLM → TTS with swappable providers per component
+  realtime         — Gemini Live speech-to-speech (English / Sinhala / Tamil / Tanglish)
+  openai_realtime  — OpenAI Realtime speech-to-speech (English, no separate STT/TTS)
+  traditional      — STT → LLM → TTS with swappable providers per component
 
 Traditional provider choices (all via .env):
   STT_PROVIDER : openai (Whisper) | deepgram
@@ -43,8 +44,19 @@ class PipelineService:
         self._ruka: KaprukaMCPTools | None = None
         self._lang_session = session_from_runner_body(
             None,
-            english_voice=settings.gemini_voice,
+            english_voice=self._active_voice(settings),
         )
+
+    @staticmethod
+    def _active_voice(settings: Settings) -> str:
+        """Return the TTS voice name relevant to the current pipeline mode.
+
+        Used to populate RTVI language-change events with a meaningful voice
+        label rather than always emitting the Gemini voice string.
+        """
+        if settings.pipeline_mode == PipelineMode.OPENAI_REALTIME:
+            return settings.openai_tts_voice
+        return settings.gemini_voice
 
     # ------------------------------------------------------------------
     # Realtime pipeline — Gemini Live (speech-to-speech)
@@ -114,6 +126,75 @@ class PipelineService:
             self._lang_session,
             traditional=False,
             push_ui=None,  # wired after worker exists
+        )
+        self._lang_sync = lang_sync
+
+        pipeline = Pipeline([
+            transport.input(),
+            user_agg,
+            llm,
+            lang_sync,
+            transport.output(),
+            assistant_agg,
+        ])
+        return pipeline, (user_agg, assistant_agg)
+
+    # ------------------------------------------------------------------
+    # OpenAI Realtime pipeline — speech-to-speech (English)
+    # ------------------------------------------------------------------
+
+    def _create_openai_realtime_pipeline(
+        self,
+        transport: BaseTransport,
+        ruka: KaprukaMCPTools,
+    ) -> Tuple[Pipeline, tuple]:
+        from pipecat.services.openai.realtime.llm import OpenAIRealtimeLLMService
+        from pipecat.services.openai.realtime.events import (
+            AudioConfiguration,
+            AudioOutput,
+            SessionProperties,
+        )
+
+        s = self._settings
+        if not s.openai_api_key:
+            raise RuntimeError("OPENAI_API_KEY is required for openai_realtime pipeline.")
+
+        preferred = self._lang_session.preferred
+        instruction = build_system_instruction(preferred_language=preferred)
+
+        logger.info(
+            f"OpenAI Realtime pipeline | model={s.openai_realtime_model} voice={s.openai_tts_voice}"
+        )
+
+        session_props = SessionProperties(
+            instructions=instruction,
+            audio=AudioConfiguration(
+                output=AudioOutput(voice=s.openai_tts_voice),
+            ),
+        )
+
+        llm = OpenAIRealtimeLLMService(
+            api_key=s.openai_api_key,
+            model=s.openai_realtime_model,
+            session_properties=session_props,
+        )
+
+        # Register tool handlers — same as traditional OpenAI path.
+        ruka.register_on_llm(llm)
+
+        context = LLMContext()
+        # Declare tool schemas so the model knows what functions it can call.
+        context.set_tools(ruka.schemas)
+
+        user_agg, assistant_agg = LLMContextAggregatorPair(
+            context,
+            realtime_service_mode=True,
+        )
+
+        lang_sync = LanguageSyncProcessor(
+            self._lang_session,
+            traditional=False,
+            push_ui=None,
         )
         self._lang_sync = lang_sync
 
@@ -212,7 +293,7 @@ class PipelineService:
                     language=tts_lang,
                 ),
             )
-        if s.tts_provider == TTSProvider.CARTESIA:
+        elif s.tts_provider == TTSProvider.CARTESIA:
             if not s.cartesia_api_key:
                 raise RuntimeError("CARTESIA_API_KEY is required when TTS_PROVIDER=cartesia.")
             from pipecat.services.cartesia.tts import CartesiaTTSService
@@ -266,6 +347,10 @@ class PipelineService:
         context = LLMContext(
             messages=[{"role": "system", "content": instruction}],
         )
+        # Declare tools in the context so OpenAI includes them in every API call.
+        # register_on_llm() wires the Python handlers; set_tools() declares the
+        # schemas — both are required for tool calling to work.
+        context.set_tools(ruka.schemas)
         user_agg, assistant_agg = LLMContextAggregatorPair(context)
 
         pipeline = Pipeline([
@@ -292,9 +377,11 @@ class PipelineService:
         conversation_id = f"ruka-{uuid.uuid4().hex[:12]}"
 
         # Session prefs from browser (UI language, etc.) via offer requestData.
+        # Use the voice name that matches the active pipeline so that all RTVI
+        # language-change events carry a meaningful voice label for the client.
         self._lang_session = session_from_runner_body(
             getattr(runner_args, "body", None),
-            english_voice=self._settings.gemini_voice,
+            english_voice=self._active_voice(self._settings),
         )
 
         logger.info(
@@ -309,6 +396,8 @@ class PipelineService:
 
         if self._settings.pipeline_mode == PipelineMode.TRADITIONAL:
             pipeline, _ = self._create_traditional_pipeline(transport, self._ruka)
+        elif self._settings.pipeline_mode == PipelineMode.OPENAI_REALTIME:
+            pipeline, _ = self._create_openai_realtime_pipeline(transport, self._ruka)
         else:
             pipeline, _ = self._create_realtime_pipeline(transport, self._ruka)
 
@@ -345,7 +434,7 @@ class PipelineService:
                         if self._settings.voice_profile.value == "english"
                         else tts_code(bootstrap)
                     ),
-                    "voice": self._settings.gemini_voice,
+                    "voice": self._active_voice(self._settings),
                     "source": "bootstrap",
                 }
             )

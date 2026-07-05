@@ -5,7 +5,7 @@ The Next.js app connects via @pipecat-ai/small-webrtc-transport.
 
 Architecture (mini pipeline.py):
   Browser ──WebRTC──► Pipecat (this service)
-                         ├─ Gemini Live (realtime) or STT+LLM+TTS (traditional)
+                         ├─ Gemini Live (realtime) | OpenAI Realtime | STT+LLM+TTS (traditional)
                          ├─ RTVI (product cards, checkout, gift message → screen)
                          └─ HTTP tools ──► Next.js /api/voice-tools
 
@@ -78,7 +78,11 @@ if __name__ == "__main__":
         raise SystemExit(1) from exc
 
     if settings.pipeline_mode.value == "realtime" and not settings.google_api_key:
-        logger.error("GOOGLE_API_KEY is required for realtime pipeline.")
+        logger.error("GOOGLE_API_KEY is required for PIPECAT_PIPELINE_MODE=realtime (Gemini Live).")
+        raise SystemExit(1)
+
+    if settings.pipeline_mode.value == "openai_realtime" and not settings.openai_api_key:
+        logger.error("OPENAI_API_KEY is required for PIPECAT_PIPELINE_MODE=openai_realtime.")
         raise SystemExit(1)
 
     # Pipecat runner defaults to localhost:7860; honour PIPECAT_HOST / PORT for Railway etc.
