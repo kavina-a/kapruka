@@ -19,7 +19,7 @@ from typing import Any, Optional, Tuple
 
 from loguru import logger
 
-from pipecat.frames.frames import LLMRunFrame
+from pipecat.frames.frames import LLMMessagesAppendFrame, LLMRunFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.worker import PipelineParams, PipelineWorker
 from pipecat.processors.aggregators.llm_context import LLMContext
@@ -420,6 +420,17 @@ class PipelineService:
         if self._lang_sync is not None:
             self._lang_sync._push_ui = push_ui
 
+        # Inbound client messages — e.g. an image the caller drops into the chat
+        # while on the voice call. We append it to the LLM context and run a
+        # turn so Ruka "sees" it and answers by voice.
+        @self._worker.rtvi.event_handler("on_client_message")
+        async def on_client_message(rtvi, message):  # noqa: ANN001
+            try:
+                if message.type == "user_image":
+                    await self._handle_user_image(message.data or {})
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning(f"on_client_message failed: {exc}")
+
         @transport.event_handler("on_client_connected")
         async def on_client_connected(transport_local, client):  # noqa: ANN001
             logger.info("Client connected")
@@ -448,6 +459,38 @@ class PipelineService:
                 await self._worker.cancel()
 
         return self._worker
+
+    async def _handle_user_image(self, data: dict) -> None:
+        """Append a caller-supplied image to the LLM context and run a turn.
+
+        The browser sends ``{ "url": "data:image/jpeg;base64,...", "prompt": ... }``
+        over the RTVI data channel. We wrap it as a standard multimodal user
+        message (text + image_url); the per-provider LLM adapter converts the
+        data URL to inline image bytes (Gemini Live, OpenAI, etc.).
+        """
+        url = (data or {}).get("url")
+        if not isinstance(url, str) or not url.startswith("data:image"):
+            logger.warning("user_image message missing a valid data URL — ignoring")
+            return
+
+        prompt = (data or {}).get("prompt")
+        text = prompt.strip() if isinstance(prompt, str) and prompt.strip() else (
+            "The caller shared this image. Look at it and help them find a "
+            "matching or similar gift."
+        )
+
+        logger.info("Received caller image — appending to LLM context and running a turn")
+
+        content = [
+            {"type": "text", "text": text},
+            {"type": "image_url", "image_url": {"url": url}},
+        ]
+        frame = LLMMessagesAppendFrame(
+            messages=[{"role": "user", "content": content}],
+            run_llm=True,
+        )
+        if self._worker:
+            await self._worker.queue_frames([frame])
 
     async def run(self, transport: BaseTransport, runner_args: RunnerArguments) -> None:
         worker = await self.initialize(transport, runner_args)

@@ -29,6 +29,8 @@ export interface VoiceEntry {
   /** False while the caller or bot is still speaking (live partial transcript). */
   final: boolean;
   createdAt: string;
+  /** Data URL of an image the caller dropped/attached during the call, if any. */
+  imageUrl?: string;
 }
 
 /** Product carousel pushed during a voice call — rendered inline in the chat thread. */

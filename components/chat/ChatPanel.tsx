@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { useRukaChat } from "./ChatContext";
 import { Message } from "./Message";
@@ -10,6 +10,7 @@ import { ChatRukaLogo } from "@/components/brand/ChatRukaLogo";
 import { RukaAvatar } from "@/components/brand/RukaAvatar";
 import { useCommerce } from "@/lib/commerce/store";
 import type { VoiceEntry } from "@/lib/commerce/store";
+import { sendVoiceImage } from "@/lib/voice/image";
 import { buildThread } from "@/lib/chat/buildThread";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -55,16 +56,26 @@ function VoiceMessage({ entry }: { entry: VoiceEntry }) {
 
   if (isUser) {
     return (
-      <div className="flex justify-end">
-        <div
-          className={cn(
-            "max-w-[82%] rounded-3xl rounded-br-lg bg-brand-700 px-4 py-2.5 text-[15px] leading-relaxed text-white shadow-sm",
-            partial && "opacity-80",
-          )}
-        >
-          {entry.text}
-          {partial && <span className="ml-1 inline-block animate-pulse">…</span>}
-        </div>
+      <div className="flex flex-col items-end gap-1.5">
+        {entry.imageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={entry.imageUrl}
+            alt="Shared with ChatRuka"
+            className="max-w-[70%] rounded-3xl rounded-br-lg border border-line object-cover shadow-sm"
+          />
+        )}
+        {(entry.text || !entry.imageUrl) && (
+          <div
+            className={cn(
+              "max-w-[82%] rounded-3xl rounded-br-lg bg-brand-700 px-4 py-2.5 text-[15px] leading-relaxed text-white shadow-sm",
+              partial && "opacity-80",
+            )}
+          >
+            {entry.text || (entry.imageUrl ? "Shared an image" : "")}
+            {partial && <span className="ml-1 inline-block animate-pulse">…</span>}
+          </div>
+        )}
       </div>
     );
   }
@@ -190,8 +201,38 @@ export function ChatPanel() {
   const voiceMessages = useCommerce((s) => s.voiceMessages);
   const voiceProductSets = useCommerce((s) => s.voiceProductSets);
   const giftFinderOpen = useCommerce((s) => s.giftFinderOpen);
+  const draggedProduct = useCommerce((s) => s.draggedProduct);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [paymentWelcome, setPaymentWelcome] = useState<string | null>(null);
+  const [voiceDropActive, setVoiceDropActive] = useState(false);
+
+  // While on a voice call, an image dropped anywhere in the composer footer is
+  // sent to the live voice agent instead of the text composer. We intercept in
+  // the capture phase so this wins over the inner text Composer's own handlers.
+  const onVoiceDropCapture = useCallback(
+    (e: React.DragEvent) => {
+      if (!voiceOpen || draggedProduct) return;
+      if (!e.dataTransfer.types.includes("Files")) return;
+      const file = e.dataTransfer.files?.[0];
+      if (!file?.type.startsWith("image/")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setVoiceDropActive(false);
+      void sendVoiceImage(file);
+    },
+    [voiceOpen, draggedProduct],
+  );
+
+  const onVoiceDragOverCapture = useCallback(
+    (e: React.DragEvent) => {
+      if (!voiceOpen || draggedProduct) return;
+      if (!e.dataTransfer.types.includes("Files")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setVoiceDropActive(true);
+    },
+    [voiceOpen, draggedProduct],
+  );
 
   useEffect(() => {
     const ref = sessionStorage.getItem("chatruka-payment-welcome");
@@ -268,13 +309,30 @@ export function ChatPanel() {
       )}
 
       {(voiceOpen || !empty) && (
-        <div className="border-t border-line bg-canvas px-3 py-3 pb-safe sm:px-6">
-          <div className="mx-auto max-w-2xl space-y-2" data-drop-zone="composer">
+        <div
+          className="border-t border-line bg-canvas px-3 py-3 pb-safe sm:px-6"
+          onDragOverCapture={onVoiceDragOverCapture}
+          onDropCapture={onVoiceDropCapture}
+          onDragLeave={() => voiceDropActive && setVoiceDropActive(false)}
+        >
+          <div
+            className={cn(
+              "mx-auto max-w-2xl space-y-2 rounded-2xl transition-shadow",
+              voiceDropActive &&
+                "shadow-[0_0_0_2px_rgba(255,210,0,0.5)] ring-2 ring-gold-400",
+            )}
+            data-drop-zone="composer"
+          >
             {voiceOpen && (
               <div
                 id="voice-composer-mount"
                 className="rounded-xl border border-brand-200/40 bg-brand-50/50 px-3 py-1.5"
               />
+            )}
+            {voiceDropActive && (
+              <div className="rounded-xl border border-dashed border-gold-400 bg-gold-50/60 px-3 py-2 text-center text-xs font-medium text-ink-muted">
+                Drop the image to show ChatRuka on the call
+              </div>
             )}
             {giftMessage.trim() && (
               <ActiveGiftMessageBar
